@@ -1,0 +1,3603 @@
+<!DOCTYPE html>
+<!--
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║ GERADOR DE ROTOGRAMA — HORA DISTRIBUIDORA DE PETROLEO LTDA       ║
+  ║                                                                  ║
+  ║  Aplicação offline para geração de rotogramas em PDF.            ║
+  ║  Banco de dados local via localStorage.                          ║
+  ║  Autocomplete fuzzy com histórico de frequência.                 ║
+  ║                                                                  ║
+  ║  Desenvolvido por  : Kaique Rangel                               ║
+  ║  Versão            : 2.0.0                                       ║
+  ╚══════════════════════════════════════════════════════════════════╝
+-->
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gerador de Rotograma — HORA DISTRIBUIDORA DE PETROLEO LTDA</title>
+
+  <!-- Biblioteca para geração de PDF no lado do cliente -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- Fontes: Barlow Condensed para títulos, Barlow para corpo -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500;600&display=swap">
+
+  <style>
+    /* ================================================================
+       DESIGN TOKENS — variáveis CSS globais
+       Altere aqui para mudar o tema inteiro da aplicação.
+    ================================================================ */
+    :root {
+      --bg        : #0f1117;
+      --surface   : #181c27;
+      --surface2  : #1e2333;
+      --border    : #2a3045;
+      --accent    : #3d8ef0;
+      --accent2   : #e8a020;
+      --text      : #e8eaf0;
+      --text2     : #8a91a8;
+      --danger    : #e05050;
+      --success   : #3dba6f;
+      --radius    : 10px;
+      --hdr-height: 62px;         /* altura do header fixo */
+      --footer-height: 48px;      /* altura do rodapé */
+    }
+
+    /* ================================================================
+       RESET E BASE
+    ================================================================ */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background  : var(--bg);
+      color       : var(--text);
+      font-family : 'Barlow', sans-serif;
+      min-height  : 100vh;
+      display     : flex;
+      flex-direction: column;
+    }
+
+    /* ================================================================
+       HEADER — barra de navegação fixa no topo
+    ================================================================ */
+    header {
+      background    : var(--surface);
+      border-bottom : 2px solid var(--accent);
+      padding       : 0 36px;
+      height        : var(--hdr-height);
+      display       : flex;
+      align-items   : center;
+      gap           : 16px;
+      position      : sticky;
+      top           : 0;
+      z-index       : 200;
+    }
+
+    /* Logo clicável para upload de imagem personalizada */
+    .logo-box {
+      display     : flex;
+      align-items : center;
+      gap         : 12px;
+      cursor      : pointer;
+      position    : relative;
+    }
+
+    .logo-box:hover .logo-upload-hint { opacity: 1; }
+
+    /* Tooltip que aparece ao passar o mouse sobre o logo */
+    .logo-upload-hint {
+      position      : absolute;
+      top           : calc(100% + 8px);
+      left          : 0;
+      background    : #1a56c4;
+      color         : #fff;
+      font-size     : 10px;
+      letter-spacing: .5px;
+      padding       : 5px 10px;
+      border-radius : 6px;
+      white-space   : nowrap;
+      opacity       : 0;
+      transition    : opacity .2s;
+      pointer-events: none;
+      z-index       : 300;
+      box-shadow    : 0 4px 14px rgba(0, 0, 0, .4);
+    }
+
+    .logo-upload-hint::before {
+      content      : '';
+      position     : absolute;
+      top          : -5px;
+      left         : 14px;
+      border       : 5px solid transparent;
+      border-bottom-color: #1a56c4;
+      border-top   : none;
+    }
+
+    .logo-icon {
+      width         : 40px;
+      height        : 40px;
+      background    : var(--accent);
+      border-radius : 8px;
+      display       : flex;
+      align-items   : center;
+      justify-content: center;
+      font-family   : 'Barlow Condensed', sans-serif;
+      font-weight   : 800;
+      font-size     : 17px;
+      color         : #fff;
+      overflow      : hidden;
+      flex-shrink   : 0;
+      transition    : opacity .2s;
+    }
+
+    .logo-icon img       { width: 100%; height: 100%; object-fit: contain; }
+    .logo-box:hover .logo-icon { opacity: .85; }
+
+    .logo-text {
+      font-family   : 'Barlow Condensed', sans-serif;
+      font-weight   : 800;
+      font-size     : 24px;
+      letter-spacing: 2px;
+      color         : #fff;
+      transition    : color .2s;
+    }
+
+    .logo-box:hover .logo-text { color: var(--accent); }
+
+    .logo-sub {
+      font-size     : 10px;
+      color         : var(--text2);
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+
+    /* Input de arquivo oculto acionado pelo clique no logo */
+    #logo-file-input { display: none; }
+
+    /* Itens à direita do header */
+    .header-right {
+      margin-left : auto;
+      display     : flex;
+      align-items : center;
+      gap         : 12px;
+    }
+
+    /* Badge que mostra a contagem de registros no banco */
+    .db-badge {
+      font-size    : 11px;
+      color        : var(--success);
+      background   : rgba(61, 186, 111, .1);
+      border       : 1px solid rgba(61, 186, 111, .25);
+      border-radius: 20px;
+      padding      : 4px 12px;
+      display      : flex;
+      align-items  : center;
+      gap          : 6px;
+    }
+
+    /* Ponto animado que indica banco ativo */
+    .db-dot {
+      width        : 6px;
+      height       : 6px;
+      border-radius: 50%;
+      background   : var(--success);
+      animation    : pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .3; }
+    }
+
+    /* Link para o GitHub do desenvolvedor */
+    .github-btn {
+      display        : flex;
+      align-items    : center;
+      justify-content: center;
+      color          : var(--text2);
+      text-decoration: none;
+      padding        : 6px;
+      border-radius  : 8px;
+      transition     : color .18s, background .18s;
+    }
+
+    .github-btn:hover {
+      color     : #fff;
+      background: rgba(255, 255, 255, .08);
+    }
+
+    /* ================================================================
+       LAYOUT PRINCIPAL
+    ================================================================ */
+    .container {
+      max-width : 1100px;
+      margin    : 0 auto;
+      padding   : 32px 24px 80px;
+      flex      : 1;
+    }
+
+    .page-title {
+      font-family   : 'Barlow Condensed', sans-serif;
+      font-weight   : 700;
+      font-size     : 30px;
+      color         : #fff;
+      margin-bottom : 4px;
+    }
+
+    .page-subtitle {
+      font-size     : 13px;
+      color         : var(--text2);
+      margin-bottom : 32px;
+    }
+
+    /* ================================================================
+       TABS — navegação entre seções (Ida, Retorno, Cadastros, PDF)
+    ================================================================ */
+    .tabs {
+      display       : flex;
+      gap           : 4px;
+      background    : var(--surface);
+      border-radius : var(--radius);
+      padding       : 5px;
+      margin-bottom : 24px;
+      width         : fit-content;
+    }
+
+    .tab {
+      padding       : 8px 20px;
+      border-radius : 7px;
+      cursor        : pointer;
+      font-family   : 'Barlow Condensed', sans-serif;
+      font-weight   : 600;
+      font-size     : 13px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color         : var(--text2);
+      border        : none;
+      background    : transparent;
+      transition    : all .18s;
+    }
+
+    .tab.active       { background: var(--accent); color: #fff; }
+    .tab-content      { display: none; }
+    .tab-content.active { display: block; }
+
+    /* ================================================================
+       CARDS — contêineres de seção
+    ================================================================ */
+    .card {
+      background    : var(--surface);
+      border        : 1px solid var(--border);
+      border-radius : var(--radius);
+      padding       : 24px;
+      margin-bottom : 18px;
+    }
+
+    .card-title {
+      font-family   : 'Barlow Condensed', sans-serif;
+      font-weight   : 700;
+      font-size     : 15px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color         : var(--accent);
+      margin-bottom : 18px;
+      display       : flex;
+      align-items   : center;
+      gap           : 8px;
+    }
+
+    /* Barra decorativa antes do título */
+    .card-title::before {
+      content      : '';
+      width        : 3px;
+      height       : 15px;
+      background   : var(--accent);
+      border-radius: 2px;
+      display      : inline-block;
+    }
+
+    /* ================================================================
+       GRID E CAMPOS DE FORMULÁRIO
+    ================================================================ */
+    .grid-3       { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+    .col-span-2   { grid-column: span 2; }
+
+    .field {
+      display       : flex;
+      flex-direction: column;
+      gap           : 5px;
+    }
+
+    label {
+      font-size     : 10px;
+      font-weight   : 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color         : var(--text2);
+    }
+
+    input, select {
+      background   : var(--bg);
+      border       : 1px solid var(--border);
+      border-radius: 7px;
+      color        : var(--text);
+      font-family  : 'Barlow', sans-serif;
+      font-size    : 14px;
+      padding      : 10px 14px;
+      outline      : none;
+      transition   : border-color .18s;
+      width        : 100%;
+    }
+
+    input:focus          { border-color: var(--accent); }
+    input::placeholder   { color: #3a4060; }
+
+    /* ================================================================
+       VALIDAÇÃO — estado de erro nos campos obrigatórios
+    ================================================================ */
+    .field-error input     { border-color: var(--danger) !important; }
+
+    .field-error-msg {
+      font-size : 11px;
+      color     : var(--danger);
+      margin-top: 3px;
+      display   : none;
+    }
+
+    .field-error .field-error-msg { display: block; }
+
+    /* ================================================================
+       AUTOCOMPLETE — dropdown de sugestões com busca fuzzy
+    ================================================================ */
+    .ac-wrap      { position: relative; }
+
+    .ac-input-row {
+      display    : flex;
+      align-items: center;
+      position   : relative;
+    }
+
+    .ac-input-row input { flex: 1; }
+
+    /* Botão "×" para limpar o campo — aparece quando há conteúdo */
+    .ac-clear {
+      position  : absolute;
+      right     : 10px;
+      top       : 50%;
+      transform : translateY(-50%);
+      background: none;
+      border    : none;
+      color     : var(--text2);
+      cursor    : pointer;
+      font-size : 14px;
+      padding   : 2px 4px;
+      border-radius: 4px;
+      display   : none;
+      line-height: 1;
+    }
+
+    .ac-input-row input:not(:placeholder-shown) ~ .ac-clear { display: block; }
+    .ac-clear:hover { color: var(--danger); }
+
+    /* Dropdown de sugestões */
+    .ac-drop {
+      position     : absolute;
+      top          : calc(100% + 5px);
+      left         : 0;
+      right        : 0;
+      z-index      : 9999;
+      background   : #141928;
+      border       : 1px solid var(--accent);
+      border-radius: 10px;
+      box-shadow   : 0 12px 40px rgba(0, 0, 0, .7);
+      display      : none;
+      overflow     : hidden;
+      flex-direction: column;
+    }
+
+    .ac-drop.open { display: flex; flex-direction: column; }
+
+    /* Barra de filtro dentro do dropdown */
+    .ac-search-row {
+      display      : flex;
+      align-items  : center;
+      gap          : 8px;
+      padding      : 8px 12px;
+      border-bottom: 1px solid var(--border);
+      background   : #0f1220;
+      flex-shrink  : 0;
+    }
+
+    .ac-search-icon   { color: var(--text2); font-size: 13px; flex-shrink: 0; }
+
+    .ac-search-input {
+      background : none;
+      border     : none;
+      color      : var(--text);
+      font-family: 'Barlow', sans-serif;
+      font-size  : 13px;
+      outline    : none;
+      flex       : 1;
+      padding    : 0;
+    }
+
+    .ac-search-input::placeholder { color: #3a4060; }
+    .ac-search-count { font-size: 10px; color: var(--text2); white-space: nowrap; flex-shrink: 0; }
+
+    /* Lista rolável de itens */
+    .ac-list {
+      overflow-y    : auto;
+      max-height    : 230px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .ac-list::-webkit-scrollbar       { width: 4px; }
+    .ac-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    /* Rótulo de grupo (ex: "Usados recentemente") */
+    .ac-group-label {
+      padding       : 5px 14px 3px;
+      font-size     : 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color         : var(--text2);
+      background    : rgba(0, 0, 0, .25);
+      border-bottom : 1px solid rgba(255, 255, 255, .03);
+      position      : sticky;
+      top           : 0;
+    }
+
+    /* Item individual do dropdown */
+    .ac-item {
+      display       : flex;
+      align-items   : center;
+      gap           : 10px;
+      padding       : 9px 14px;
+      cursor        : pointer;
+      border-bottom : 1px solid rgba(255, 255, 255, .03);
+      transition    : background .08s;
+      user-select   : none;
+    }
+
+    .ac-item:last-child               { border-bottom: none; }
+    .ac-item:hover, .ac-item.focused  { background: rgba(61, 142, 240, .16); }
+    .ac-item.focused                  { border-left: 2px solid var(--accent); }
+
+    .ac-item-icon { font-size: 14px; opacity: .65; flex-shrink: 0; width: 18px; text-align: center; }
+
+    .ac-item-body { flex: 1; min-width: 0; }
+
+    .ac-item-main {
+      font-size    : 13px;
+      white-space  : nowrap;
+      overflow     : hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Trecho destacado pelo match fuzzy */
+    .ac-item-main mark { background: none; color: var(--accent); font-weight: 700; }
+
+    .ac-item-sub  { font-size: 10px; color: var(--text2); margin-top: 1px; }
+
+    /* Badge de frequência de uso */
+    .ac-item-freq {
+      font-size    : 10px;
+      color        : var(--text2);
+      background   : var(--surface2);
+      border-radius: 10px;
+      padding      : 1px 7px;
+      flex-shrink  : 0;
+      letter-spacing: .5px;
+    }
+
+    /* Botão de remoção — aparece ao hover */
+    .ac-item-del {
+      flex-shrink  : 0;
+      opacity      : 0;
+      font-size    : 11px;
+      color        : var(--danger);
+      padding      : 3px 7px;
+      border-radius: 4px;
+      background   : rgba(224, 80, 80, .08);
+      border       : none;
+      cursor       : pointer;
+      transition   : opacity .15s;
+    }
+
+    .ac-item:hover .ac-item-del { opacity: 1; }
+
+    .ac-empty {
+      padding   : 20px;
+      text-align: center;
+      color     : var(--text2);
+      font-size : 12px;
+      font-style: italic;
+    }
+
+    /* Rodapé do dropdown com atalhos de teclado */
+    .ac-footer {
+      padding      : 6px 14px;
+      font-size    : 10px;
+      color        : var(--text2);
+      border-top   : 1px solid var(--border);
+      background   : #0f1220;
+      display      : flex;
+      justify-content: space-between;
+      flex-shrink  : 0;
+    }
+
+    .ac-footer kbd {
+      background   : var(--surface2);
+      border       : 1px solid var(--border);
+      border-radius: 3px;
+      padding      : 0 5px;
+      font-size    : 9px;
+      font-family  : monospace;
+    }
+
+    /* Banner que confirma preenchimento automático da placa */
+    .ac-autofill {
+      position     : absolute;
+      right        : 10px;
+      top          : 50%;
+      transform    : translateY(-50%);
+      font-size    : 10px;
+      color        : var(--success);
+      background   : rgba(61, 186, 111, .1);
+      border-radius: 4px;
+      padding      : 2px 7px;
+      pointer-events: none;
+      display      : none;
+    }
+
+    /* ================================================================
+       LISTAS DE PARADAS / ENTREGAS / RODOVIAS
+    ================================================================ */
+    .paradas-list { display: flex; flex-direction: column; gap: 8px; }
+
+    /* Grade: número | campo principal | campo cidade | botão remover */
+    .parada-row {
+      display              : grid;
+      grid-template-columns: 28px 1fr 1fr 34px;
+      gap                  : 8px;
+      align-items          : start;
+    }
+
+    /* Círculo numerado à esquerda de cada linha */
+    .parada-num {
+      width          : 28px;
+      height         : 28px;
+      background     : var(--surface2);
+      border         : 1px solid var(--border);
+      border-radius  : 50%;
+      display        : flex;
+      align-items    : center;
+      justify-content: center;
+      font-size      : 11px;
+      font-weight    : 700;
+      color          : var(--accent);
+      margin-top     : 3px;
+      flex-shrink    : 0;
+    }
+
+    /* Botão de remoção de uma linha da lista */
+    .btn-remove {
+      width        : 30px;
+      height       : 30px;
+      background   : transparent;
+      border       : 1px solid var(--danger);
+      color        : var(--danger);
+      border-radius: 6px;
+      cursor       : pointer;
+      font-size    : 13px;
+      display      : flex;
+      align-items  : center;
+      justify-content: center;
+      transition   : all .18s;
+      margin-top   : 3px;
+    }
+
+    .btn-remove:hover { background: var(--danger); color: #fff; }
+
+    /* Botão tracejado para adicionar nova linha */
+    .btn-add {
+      display        : flex;
+      align-items    : center;
+      gap            : 8px;
+      background     : var(--surface2);
+      border         : 1px dashed var(--border);
+      color          : var(--text2);
+      border-radius  : 7px;
+      padding        : 9px 16px;
+      cursor         : pointer;
+      font-size      : 13px;
+      margin-top     : 6px;
+      transition     : all .18s;
+      width          : 100%;
+      justify-content: center;
+    }
+
+    .btn-add:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ================================================================
+       UPLOAD DE MAPAS — zona de drag-and-drop
+    ================================================================ */
+    .upload-zone {
+      border       : 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding      : 32px 24px;
+      text-align   : center;
+      cursor       : pointer;
+      transition   : all .2s;
+      position     : relative;
+    }
+
+    .upload-zone:hover,
+    .upload-zone.drag  { border-color: var(--accent); background: rgba(61, 142, 240, .05); }
+
+    /* Input de arquivo sobrepõe toda a zona de upload */
+    .upload-zone input[type=file] {
+      position: absolute;
+      inset   : 0;
+      opacity : 0;
+      cursor  : pointer;
+      width   : 100%;
+      height  : 100%;
+    }
+
+    .upload-icon  { font-size: 32px; margin-bottom: 10px; }
+    .upload-label { font-weight: 600; font-size: 14px; color: var(--text); }
+    .upload-hint  { font-size: 11px; color: var(--text2); margin-top: 3px; }
+
+    /* Prévia da imagem após upload */
+    .map-preview {
+      margin-top   : 14px;
+      border-radius: 8px;
+      overflow     : hidden;
+      border       : 1px solid var(--border);
+      display      : none;
+    }
+
+    .map-preview img {
+      width     : 100%;
+      display   : block;
+      max-height: 260px;
+      object-fit: cover;
+    }
+
+    .map-preview-label {
+      background: var(--surface2);
+      padding   : 7px 14px;
+      font-size : 11px;
+      color     : var(--text2);
+      display   : flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .btn-clear-img { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 11px; }
+
+    /* ================================================================
+       BOTÕES GLOBAIS
+    ================================================================ */
+    .actions { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+
+    .btn {
+      padding        : 11px 24px;
+      border-radius  : 8px;
+      font-family    : 'Barlow Condensed', sans-serif;
+      font-weight    : 700;
+      font-size      : 14px;
+      letter-spacing : 1.5px;
+      text-transform : uppercase;
+      border         : none;
+      cursor         : pointer;
+      transition     : all .18s;
+      display        : flex;
+      align-items    : center;
+      gap            : 7px;
+    }
+
+    .btn-primary  { background: var(--accent); color: #fff; }
+    .btn-primary:hover {
+      background : #2a78e0;
+      transform  : translateY(-1px);
+      box-shadow : 0 6px 20px rgba(61, 142, 240, .3);
+    }
+
+    .btn-secondary { background: var(--accent2); color: #111; }
+
+    .btn-ghost     { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
+    .btn-ghost:hover { color: var(--text); border-color: var(--text2); }
+
+    .btn-danger    { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+    .btn-danger:hover { background: var(--danger); color: #fff; }
+
+    .btn-sm        { padding: 6px 13px; font-size: 11px; }
+
+    /* ================================================================
+       BARRA DE STATUS — feedback após ações (gerar PDF, importar, etc.)
+    ================================================================ */
+    .status-bar {
+      background   : var(--surface2);
+      border       : 1px solid var(--border);
+      border-radius: 8px;
+      padding      : 11px 16px;
+      font-size    : 13px;
+      color        : var(--text2);
+      margin-top   : 14px;
+      display      : none;
+      align-items  : center;
+      gap          : 10px;
+    }
+
+    .status-bar.show { display: flex; }
+    .status-bar.ok   { border-color: var(--success); color: var(--success); }
+    .status-bar.err  { border-color: var(--danger);  color: var(--danger);  }
+
+    /* ================================================================
+       ABA CADASTROS — listagens do banco de dados local
+    ================================================================ */
+    .db-section        { margin-bottom: 24px; }
+
+    .db-section-header {
+      display        : flex;
+      align-items    : center;
+      justify-content: space-between;
+      margin-bottom  : 8px;
+    }
+
+    .db-section-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+
+    .db-count-badge {
+      font-size    : 11px;
+      background   : var(--surface2);
+      border       : 1px solid var(--border);
+      border-radius: 10px;
+      padding      : 2px 8px;
+      color        : var(--text2);
+    }
+
+    .db-search {
+      width        : 100%;
+      background   : var(--bg);
+      border       : 1px solid var(--border);
+      border-radius: 7px;
+      color        : var(--text);
+      font-family  : 'Barlow', sans-serif;
+      font-size    : 13px;
+      padding      : 8px 12px;
+      outline      : none;
+      margin-bottom: 8px;
+    }
+
+    .db-search:focus { border-color: var(--accent); }
+
+    .db-virtual-list {
+      height        : 180px;
+      overflow-y    : auto;
+      display       : flex;
+      flex-direction: column;
+      gap           : 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .db-virtual-list::-webkit-scrollbar       { width: 4px; }
+    .db-virtual-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .db-row {
+      display      : flex;
+      align-items  : center;
+      gap          : 10px;
+      padding      : 7px 12px;
+      background   : var(--bg);
+      border-radius: 6px;
+      border       : 1px solid var(--border);
+      font-size    : 13px;
+    }
+
+    .db-row-main  { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .db-row-freq {
+      font-size    : 10px;
+      color        : var(--text2);
+      background   : var(--surface2);
+      border-radius: 8px;
+      padding      : 1px 7px;
+      flex-shrink  : 0;
+    }
+
+    .db-row-del {
+      background : none;
+      border     : none;
+      color      : var(--danger);
+      cursor     : pointer;
+      font-size  : 14px;
+      opacity    : .35;
+      padding    : 0 4px;
+      flex-shrink: 0;
+    }
+
+    .db-row-del:hover { opacity: 1; }
+
+    .db-empty {
+      font-size : 12px;
+      color     : var(--text2);
+      font-style: italic;
+      padding   : 10px 4px;
+    }
+
+    .db-page-controls {
+      display        : flex;
+      align-items    : center;
+      justify-content: space-between;
+      margin-top     : 8px;
+      font-size      : 11px;
+      color          : var(--text2);
+    }
+
+    .db-page-btn {
+      background   : var(--surface2);
+      border       : 1px solid var(--border);
+      color        : var(--text2);
+      border-radius: 5px;
+      padding      : 3px 10px;
+      cursor       : pointer;
+      font-size    : 11px;
+    }
+
+    .db-page-btn:hover    { color: var(--text); }
+    .db-page-btn:disabled { opacity: .3; cursor: default; }
+
+    /* ================================================================
+       MODAL — diálogo para adicionar registros manualmente
+    ================================================================ */
+    #modal-overlay {
+      display        : none;
+      position       : fixed;
+      inset          : 0;
+      background     : rgba(0, 0, 0, .75);
+      z-index        : 500;
+      align-items    : center;
+      justify-content: center;
+    }
+
+    .modal-box {
+      background   : var(--surface);
+      border       : 1px solid var(--border);
+      border-radius: 12px;
+      padding      : 28px;
+      width        : 440px;
+      max-width    : 90vw;
+    }
+
+    .modal-title {
+      font-family  : 'Barlow Condensed', sans-serif;
+      font-weight  : 700;
+      font-size    : 18px;
+      margin-bottom: 16px;
+    }
+
+    /* ================================================================
+       ABA PDF — prévia visual do layout gerado
+    ================================================================ */
+    .pdf-preview-banner {
+      background   : var(--surface2);
+      border       : 1px solid var(--border);
+      border-radius: 10px;
+      padding      : 20px;
+      margin-bottom: 18px;
+      display      : grid;
+      grid-template-columns: 1fr 1fr;
+      gap          : 12px;
+    }
+
+    .pdf-preview-page {
+      background   : var(--bg);
+      border       : 1px solid var(--border);
+      border-radius: 8px;
+      overflow     : hidden;
+    }
+
+    .pdf-preview-hdr   { background: #1a56c4; padding: 8px 12px; font-size: 10px; font-weight: 700; color: #fff; letter-spacing: 1px; }
+    .pdf-preview-body  { padding: 10px 12px; font-size: 10px; color: var(--text2); line-height: 1.6; }
+
+    .pdf-preview-section {
+      font-size     : 9px;
+      font-weight   : 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color         : var(--accent);
+      margin        : 8px 0 4px;
+    }
+
+    .pdf-tag {
+      display      : inline-block;
+      background   : rgba(61, 142, 240, .12);
+      border       : 1px solid rgba(61, 142, 240, .25);
+      color        : var(--accent);
+      border-radius: 4px;
+      padding      : 1px 6px;
+      font-size    : 9px;
+      font-weight  : 700;
+      margin-right : 4px;
+    }
+
+    .pdf-tag.verde { background: rgba(32, 160, 100, .12); border-color: rgba(32, 160, 100, .25); color: #3dba6f; }
+    .pdf-tag.ambar { background: rgba(200, 140, 20, .12); border-color: rgba(200, 140, 20, .25); color: var(--accent2); }
+
+    /* ================================================================
+       RODAPÉ — informações do desenvolvedor e copyright
+    ================================================================ */
+    .site-footer {
+      background     : var(--surface);
+      border-top     : 1px solid var(--border);
+      padding        : 0 36px;
+      height         : var(--footer-height);
+      display        : flex;
+      align-items    : center;
+      justify-content: space-between;
+      gap            : 16px;
+      flex-shrink    : 0;
+    }
+
+    .footer-left {
+      display    : flex;
+      align-items: center;
+      gap        : 8px;
+      font-size  : 11px;
+      color      : var(--text2);
+    }
+
+    .footer-divider {
+      width     : 1px;
+      height    : 12px;
+      background: var(--border);
+    }
+
+    .footer-brand {
+      font-family   : 'Barlow Condensed', sans-serif;
+      font-weight   : 700;
+      font-size     : 12px;
+      letter-spacing: 1px;
+      color         : var(--text);
+    }
+
+    .footer-right {
+      display    : flex;
+      align-items: center;
+      gap        : 16px;
+      font-size  : 11px;
+      color      : var(--text2);
+    }
+
+    .footer-dev {
+      display    : flex;
+      align-items: center;
+      gap        : 6px;
+    }
+
+    .footer-dev-label { color: var(--text2); }
+
+    .footer-dev-name {
+      color      : var(--accent);
+      font-weight: 600;
+    }
+
+    .footer-dev-link {
+      display        : flex;
+      align-items    : center;
+      justify-content: center;
+      color          : var(--text2);
+      text-decoration: none;
+      padding        : 3px 6px;
+      border-radius  : 5px;
+      border         : 1px solid var(--border);
+      transition     : color .18s, border-color .18s;
+      gap            : 4px;
+      font-size      : 10px;
+    }
+
+    .footer-dev-link:hover { color: #fff; border-color: var(--text2); }
+
+    /* ================================================================
+       RESPONSIVIDADE — telas menores que 720px
+    ================================================================ */
+    @media (max-width: 720px) {
+      .grid-3                              { grid-template-columns: 1fr; }
+      .col-span-2                          { grid-column: span 1; }
+      /* Oculta a coluna de cidade em telas pequenas */
+      .parada-row                          { grid-template-columns: 26px 1fr 28px; }
+      .parada-row .ac-wrap:nth-child(3)    { display: none; }
+      header                               { padding: 0 16px; }
+      .pdf-preview-banner                  { grid-template-columns: 1fr; }
+      .site-footer                         { flex-direction: column; height: auto; padding: 12px 16px; gap: 6px; text-align: center; }
+      .footer-right                        { flex-direction: column; gap: 6px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ============================================================
+       HEADER — logotipo, badge de banco e link para GitHub
+  ============================================================ -->
+  <header>
+    <div
+      class="logo-box"
+      onclick="document.getElementById('logo-file-input').click()"
+      title="Clique para carregar o logotipo da empresa"
+      role="button"
+      aria-label="Carregar logotipo da empresa"
+    >
+      <div class="logo-icon" id="logo-icon-el" aria-hidden="true">H</div>
+      <div>
+        <div class="logo-text" id="logo-text-el">HORA</div>
+        <div class="logo-sub">HORA DISTRIBUIDORA DE PETROLEO LTDA</div>
+      </div>
+      <div class="logo-upload-hint" aria-hidden="true">🖼 Clique para carregar seu logotipo</div>
+    </div>
+
+    <!-- Input oculto para seleção do arquivo de logo -->
+    <input
+      type="file"
+      id="logo-file-input"
+      accept="image/*"
+      aria-label="Arquivo de logotipo"
+      onchange="Logo.load(event)"
+    >
+
+    <div class="header-right">
+      <!-- Contador de registros no banco local -->
+      <div class="db-badge" role="status">
+        <div class="db-dot" aria-hidden="true"></div>
+        <span id="db-count">0 registros</span>
+      </div>
+
+      <!-- Link externo para o repositório no GitHub -->
+      <a
+        href="https://github.com/Kaiquerangel"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="github-btn"
+        aria-label="Ver código no GitHub"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+        </svg>
+      </a>
+    </div>
+  </header>
+
+  <!-- ============================================================
+       CONTEÚDO PRINCIPAL
+  ============================================================ -->
+  <main class="container">
+
+    <h1 class="page-title">Gerador de Rotograma</h1>
+    <p class="page-subtitle">Autocomplete inteligente</p>
+
+    <!-- Navegação por abas -->
+    <div class="tabs" role="tablist" aria-label="Seções do rotograma">
+      <button class="tab active" role="tab" onclick="switchTab('ida', this)">🚛 Ida</button>
+      <button class="tab"        role="tab" onclick="switchTab('retorno', this)">🔄 Retorno</button>
+      <button class="tab"        role="tab" onclick="switchTab('cadastro', this)">🗂 Cadastros</button>
+      <button class="tab"        role="tab" onclick="switchTab('preview', this)">📄 PDF</button>
+    </div>
+
+    <!-- ==========================================================
+         ABA IDA — dados do carregamento, entregas e mapa de ida
+    ========================================================== -->
+    <div class="tab-content active" id="tab-ida" role="tabpanel">
+
+      <!-- Dados gerais do carregamento -->
+      <div class="card">
+        <div class="card-title">Dados do Carregamento</div>
+        <div class="grid-3">
+
+          <!-- Motorista (campo obrigatório) -->
+          <div class="field col-span-2" id="field-motorista">
+            <label for="motorista">Motorista <span aria-hidden="true">*</span></label>
+            <div id="acw-motorista" class="ac-wrap">
+              <div class="ac-input-row">
+                <input
+                  id="motorista"
+                  type="text"
+                  placeholder="Nome do motorista"
+                  autocomplete="off"
+                  aria-label="Nome do motorista"
+                  aria-required="true"
+                  onfocus="AC.open('motorista', 'motoristas')"
+                  oninput="S.motorista = this.value; AC.open('motorista', 'motoristas')"
+                  onkeydown="AC.key(event, 'motorista')"
+                  onblur="AC.blur('motorista')"
+                >
+                <button class="ac-clear" onclick="AC.clearInput('motorista')" aria-label="Limpar motorista">×</button>
+              </div>
+              <!-- Banner confirmando preenchimento automático da placa via vínculo -->
+              <span class="ac-autofill" id="af-placa">placa preenchida ✓</span>
+              <div class="ac-drop" id="acd-motorista"></div>
+            </div>
+            <span class="field-error-msg" id="err-motorista">Informe o nome do motorista</span>
+          </div>
+
+          <!-- Placa do veículo (campo obrigatório) -->
+          <div class="field" id="field-placa">
+            <label for="placa">Placa <span aria-hidden="true">*</span></label>
+            <div id="acw-placa" class="ac-wrap">
+              <div class="ac-input-row">
+                <input
+                  id="placa"
+                  type="text"
+                  placeholder="PLR-1A22"
+                  autocomplete="off"
+                  style="text-transform: uppercase"
+                  aria-label="Placa do veículo"
+                  aria-required="true"
+                  onfocus="AC.open('placa', 'placas')"
+                  oninput="S.placa = this.value.toUpperCase(); AC.open('placa', 'placas')"
+                  onkeydown="AC.key(event, 'placa')"
+                  onblur="AC.blur('placa'); DB.add('placas', this.value)"
+                >
+                <button class="ac-clear" onclick="AC.clearInput('placa')" aria-label="Limpar placa">×</button>
+              </div>
+              <div class="ac-drop" id="acd-placa"></div>
+            </div>
+            <span class="field-error-msg" id="err-placa">Informe a placa do veículo</span>
+          </div>
+
+          <!-- Data do carregamento (campo obrigatório) -->
+          <div class="field" id="field-data">
+            <label for="data_carga">Data do Carregamento <span aria-hidden="true">*</span></label>
+            <input
+              id="data_carga"
+              type="date"
+              aria-label="Data do carregamento"
+              aria-required="true"
+              onchange="S.data = this.value"
+            >
+            <span class="field-error-msg" id="err-data">Informe a data do carregamento</span>
+          </div>
+
+          <!-- Base de carregamento -->
+          <div class="field col-span-2">
+            <label for="base">Base de Carregamento</label>
+            <div id="acw-base" class="ac-wrap">
+              <div class="ac-input-row">
+                <input
+                  id="base"
+                  type="text"
+                  placeholder="Ex: BASE PHL"
+                  autocomplete="off"
+                  aria-label="Base de carregamento"
+                  onfocus="AC.open('base', 'bases')"
+                  oninput="S.base = this.value; AC.open('base', 'bases')"
+                  onkeydown="AC.key(event, 'base')"
+                  onblur="AC.blur('base'); DB.add('bases', this.value)"
+                >
+                <button class="ac-clear" onclick="AC.clearInput('base')" aria-label="Limpar base">×</button>
+              </div>
+              <div class="ac-drop" id="acd-base"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Lista de entregas na ordem de entrega -->
+      <div class="card">
+        <div class="card-title">Ordem das Entregas</div>
+        <div id="entregas-list" class="paradas-list" role="list" aria-label="Lista de entregas"></div>
+        <button class="btn-add" onclick="Form.addEntrega()" aria-label="Adicionar nova entrega">＋ Adicionar Entrega</button>
+        <span class="field-error-msg" id="err-entregas" style="display: none; margin-top: 8px">
+          Adicione pelo menos uma entrega com nome preenchido
+        </span>
+      </div>
+
+      <!-- Rodovias percorridas na ida -->
+      <div class="card">
+        <div class="card-title">Rodovias (Ida)</div>
+        <div id="rodovias-ida-list" class="paradas-list" role="list" aria-label="Rodovias da ida"></div>
+        <button class="btn-add" onclick="Form.addRodovia('ida')" aria-label="Adicionar rodovia na ida">＋ Adicionar Rodovia</button>
+      </div>
+
+      <!-- Paradas autorizadas na ida -->
+      <div class="card">
+        <div class="card-title">Paradas Autorizadas (Ida)</div>
+        <div id="paradas-ida-list" class="paradas-list" role="list" aria-label="Paradas autorizadas na ida"></div>
+        <button class="btn-add" onclick="Form.addParada('ida')" aria-label="Adicionar parada na ida">＋ Adicionar Parada</button>
+      </div>
+
+      <!-- Upload do print do Google Maps para a ida -->
+      <div class="card">
+        <div class="card-title">Mapa — Ida (Print Google Maps)</div>
+        <div
+          class="upload-zone"
+          id="drop-ida"
+          ondragover="dragOver(event, 'drop-ida')"
+          ondragleave="dragLeave('drop-ida')"
+          ondrop="dropFile(event, 'ida')"
+          role="region"
+          aria-label="Área de upload do mapa de ida"
+        >
+          <input type="file" accept="image/*" onchange="loadMap(event, 'ida')" aria-label="Selecionar imagem do mapa de ida">
+          <div class="upload-icon" aria-hidden="true">🗺️</div>
+          <div class="upload-label">Clique ou arraste o print do mapa</div>
+          <div class="upload-hint">PNG ou JPG — screenshot do Google Maps</div>
+        </div>
+        <div class="map-preview" id="preview-ida">
+          <img id="img-ida" src="" alt="Mapa de ida">
+          <div class="map-preview-label">
+            <span>✓ Mapa carregado</span>
+            <button class="btn-clear-img" onclick="clearMap('ida')" aria-label="Remover mapa de ida">✕ Remover</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /tab-ida -->
+
+    <!-- ==========================================================
+         ABA RETORNO — rodovias, paradas e mapa de volta
+    ========================================================== -->
+    <div class="tab-content" id="tab-retorno" role="tabpanel">
+
+      <div class="card">
+        <div class="card-title">Rodovias (Retorno)</div>
+        <div id="rodovias-ret-list" class="paradas-list" role="list" aria-label="Rodovias do retorno"></div>
+        <button class="btn-add" onclick="Form.addRodovia('ret')" aria-label="Adicionar rodovia no retorno">＋ Adicionar Rodovia</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Paradas Autorizadas (Retorno)</div>
+        <div id="paradas-ret-list" class="paradas-list" role="list" aria-label="Paradas autorizadas no retorno"></div>
+        <button class="btn-add" onclick="Form.addParada('ret')" aria-label="Adicionar parada no retorno">＋ Adicionar Parada</button>
+      </div>
+
+      <!-- Telefone de contato impresso na segunda página do PDF -->
+      <div class="card">
+        <div class="card-title">Contato — Dúvidas</div>
+        <div id="acw-contato" class="ac-wrap" style="max-width: 320px">
+          <div class="ac-input-row">
+            <input
+              id="contato"
+              type="text"
+              placeholder="75 99930-6620"
+              autocomplete="off"
+              aria-label="Telefone de contato para dúvidas"
+              onfocus="AC.open('contato', 'contatos')"
+              oninput="S.contato = this.value; AC.open('contato', 'contatos')"
+              onkeydown="AC.key(event, 'contato')"
+              onblur="AC.blur('contato'); DB.add('contatos', this.value)"
+            >
+            <button class="ac-clear" onclick="AC.clearInput('contato')" aria-label="Limpar contato">×</button>
+          </div>
+          <div class="ac-drop" id="acd-contato"></div>
+        </div>
+      </div>
+
+      <!-- Upload do print do Google Maps para o retorno -->
+      <div class="card">
+        <div class="card-title">Mapa — Retorno</div>
+        <div
+          class="upload-zone"
+          id="drop-ret"
+          ondragover="dragOver(event, 'drop-ret')"
+          ondragleave="dragLeave('drop-ret')"
+          ondrop="dropFile(event, 'ret')"
+          role="region"
+          aria-label="Área de upload do mapa de retorno"
+        >
+          <input type="file" accept="image/*" onchange="loadMap(event, 'ret')" aria-label="Selecionar imagem do mapa de retorno">
+          <div class="upload-icon" aria-hidden="true">🗺️</div>
+          <div class="upload-label">Clique ou arraste o print do mapa</div>
+          <div class="upload-hint">PNG ou JPG — screenshot do Google Maps</div>
+        </div>
+        <div class="map-preview" id="preview-ret">
+          <img id="img-ret" src="" alt="Mapa de retorno">
+          <div class="map-preview-label">
+            <span>✓ Mapa carregado</span>
+            <button class="btn-clear-img" onclick="clearMap('ret')" aria-label="Remover mapa de retorno">✕ Remover</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /tab-retorno -->
+
+    <!-- ==========================================================
+         ABA CADASTROS — gerenciamento do banco de dados local
+    ========================================================== -->
+    <div class="tab-content" id="tab-cadastro" role="tabpanel">
+      <div class="card">
+        <div class="card-title">Banco de Dados Local</div>
+        <p style="font-size: 13px; color: var(--text2); line-height: 1.7; margin-bottom: 20px">
+          Dados salvos no <strong style="color: var(--text)">navegador deste computador</strong>.
+          Geração de PDF salva tudo automaticamente.
+        </p>
+
+        <!-- Seção: Motoristas -->
+        <div class="db-section">
+          <div class="db-section-header">
+            <div class="db-section-title">👤 Motoristas <span class="db-count-badge" id="cnt-motoristas">0</span></div>
+            <button class="btn btn-ghost btn-sm" onclick="openModal('motoristas', 'Motorista')" aria-label="Adicionar motorista">＋ Adicionar</button>
+          </div>
+          <input class="db-search" id="srch-motoristas" placeholder="Buscar motorista..." aria-label="Buscar motorista" oninput="Cad.render('motoristas')">
+          <div class="db-virtual-list" id="db-motoristas" role="list" aria-label="Lista de motoristas"></div>
+          <div class="db-page-controls" id="pg-motoristas"></div>
+        </div>
+
+        <!-- Seção: Placas -->
+        <div class="db-section">
+          <div class="db-section-header">
+            <div class="db-section-title">🚛 Placas <span class="db-count-badge" id="cnt-placas">0</span></div>
+            <button class="btn btn-ghost btn-sm" onclick="openModal('placas', 'Placa')" aria-label="Adicionar placa">＋ Adicionar</button>
+          </div>
+          <input class="db-search" id="srch-placas" placeholder="Buscar placa..." aria-label="Buscar placa" oninput="Cad.render('placas')">
+          <div class="db-virtual-list" id="db-placas" role="list" aria-label="Lista de placas"></div>
+          <div class="db-page-controls" id="pg-placas"></div>
+        </div>
+
+        <!-- Seção: Bases -->
+        <div class="db-section">
+          <div class="db-section-header">
+            <div class="db-section-title">🏭 Bases <span class="db-count-badge" id="cnt-bases">0</span></div>
+            <button class="btn btn-ghost btn-sm" onclick="openModal('bases', 'Base')" aria-label="Adicionar base">＋ Adicionar</button>
+          </div>
+          <input class="db-search" id="srch-bases" placeholder="Buscar base..." aria-label="Buscar base" oninput="Cad.render('bases')">
+          <div class="db-virtual-list" id="db-bases" role="list" aria-label="Lista de bases"></div>
+          <div class="db-page-controls" id="pg-bases"></div>
+        </div>
+
+        <!-- Seção: Rodovias -->
+        <div class="db-section">
+          <div class="db-section-header">
+            <div class="db-section-title">🛣️ Rodovias <span class="db-count-badge" id="cnt-rodovias">0</span></div>
+            <button class="btn btn-ghost btn-sm" onclick="openModal('rodovias', 'Rota')" aria-label="Adicionar rodovia">＋ Adicionar</button>
+          </div>
+          <input class="db-search" id="srch-rodovias" placeholder="Buscar rota..." aria-label="Buscar rodovia" oninput="Cad.render('rodovias')">
+          <div class="db-virtual-list" id="db-rodovias" role="list" aria-label="Lista de rodovias"></div>
+          <div class="db-page-controls" id="pg-rodovias"></div>
+        </div>
+
+        <!-- Seção: Clientes / Postos -->
+        <div class="db-section">
+          <div class="db-section-header">
+            <div class="db-section-title">⛽ Clientes / Postos <span class="db-count-badge" id="cnt-postos">0</span></div>
+            <button class="btn btn-ghost btn-sm" onclick="openModal('postos', 'Cliente / Posto')" aria-label="Adicionar cliente ou posto">＋ Adicionar</button>
+          </div>
+          <input class="db-search" id="srch-postos" placeholder="Buscar cliente ou posto..." aria-label="Buscar cliente ou posto" oninput="Cad.render('postos')">
+          <div class="db-virtual-list" id="db-postos" role="list" aria-label="Lista de clientes e postos"></div>
+          <div class="db-page-controls" id="pg-postos"></div>
+        </div>
+
+        <!-- Seção: Cidades -->
+        <div class="db-section">
+          <div class="db-section-header">
+            <div class="db-section-title">📍 Cidades <span class="db-count-badge" id="cnt-cidades">0</span></div>
+            <button class="btn btn-ghost btn-sm" onclick="openModal('cidades', 'Cidade')" aria-label="Adicionar cidade">＋ Adicionar</button>
+          </div>
+          <input class="db-search" id="srch-cidades" placeholder="Buscar cidade..." aria-label="Buscar cidade" oninput="Cad.render('cidades')">
+          <div class="db-virtual-list" id="db-cidades" role="list" aria-label="Lista de cidades"></div>
+          <div class="db-page-controls" id="pg-cidades"></div>
+        </div>
+
+        <!-- Seção: Vínculos Motorista → Placa (preenchimento automático) -->
+        <div class="db-section">
+          <div class="db-section-header">
+            <div class="db-section-title">🔗 Vínculos Motorista → Placa <span class="db-count-badge" id="cnt-vinculos">0</span></div>
+          </div>
+          <div class="db-virtual-list" id="db-vinculos" role="list" aria-label="Vínculos entre motorista e placa"></div>
+          <p style="font-size: 11px; color: var(--text2); margin-top: 8px">
+            Criado automaticamente ao gerar PDF. Ao selecionar motorista, a placa é preenchida sozinha.
+          </p>
+        </div>
+
+        <!-- Ações de importação / exportação do banco -->
+        <div class="actions" style="border-top: 1px solid var(--border); padding-top: 20px; margin-top: 4px">
+          <button class="btn btn-secondary" onclick="exportDb()">📤 Exportar JSON</button>
+          <button class="btn btn-ghost"     onclick="document.getElementById('import-file').click()">📥 Importar JSON</button>
+          <button class="btn btn-danger"    onclick="clearAllDb()">🗑 Limpar tudo</button>
+          <input type="file" id="import-file" accept=".json" style="display: none" onchange="importDb(event)" aria-label="Arquivo JSON para importar">
+        </div>
+      </div>
+    </div><!-- /tab-cadastro -->
+
+    <!-- ==========================================================
+         ABA PDF — prévia do layout e botão de geração
+    ========================================================== -->
+    <div class="tab-content" id="tab-preview" role="tabpanel">
+
+      <!-- Miniaturas visuais do layout de cada página do PDF -->
+      <div class="card">
+        <div class="card-title">Prévia do Layout</div>
+        <div class="pdf-preview-banner" aria-label="Prévia do layout do PDF">
+
+          <!-- Miniatura da Página 1 (Ida) -->
+          <div class="pdf-preview-page">
+            <div class="pdf-preview-hdr">📄 PÁGINA 1 — ROTOGRAMA IDA</div>
+            <div class="pdf-preview-body">
+              <div style="background:#1a56c4;border-radius:4px;padding:5px 8px;color:#fff;font-size:9px;font-weight:700;margin-bottom:6px">Cabeçalho azul com logo + título</div>
+              <div style="background:#eef2ff;border:1px solid #c0d2f0;border-radius:4px;padding:6px 8px;font-size:9px;margin-bottom:6px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px">
+                  <div><span style="color:#8090b0;font-size:8px">MOTORISTA</span><br><strong>GILVANEI AVELINO</strong></div>
+                  <div><span style="color:#8090b0;font-size:8px">PLACA</span><br><strong style="color:#1a56c4">PLR-1A22</strong></div>
+                  <div><span style="color:#8090b0;font-size:8px">DATA</span><br>02/04/2026</div>
+                  <div><span style="color:#8090b0;font-size:8px">BASE</span><br>BASE PHL</div>
+                </div>
+              </div>
+              <div style="background:#fff8e0;border:1px solid #f0d080;border-left:3px solid #c88c14;border-radius:4px;padding:4px 8px;font-size:9px;margin-bottom:6px;font-family:monospace">BA-523 – BR-110 – BR-101</div>
+              <div class="pdf-preview-section">Entregas <span class="pdf-tag">numeradas em azul</span></div>
+              <div style="background:#f0f4ff;border-left:3px solid #1a56c4;border-radius:3px;padding:4px 8px;font-size:9px;margin-bottom:3px">① P8 PRODUTOS DE PETROLEO — <span style="color:#8090b0">Ribeira do Amparo</span></div>
+              <div style="background:#f0f4ff;border-left:3px solid #1a56c4;border-radius:3px;padding:4px 8px;font-size:9px;margin-bottom:6px">② AUTO POSTO JR LTDA — <span style="color:#8090b0">Ribeira do Amparo</span></div>
+              <div class="pdf-preview-section">Paradas <span class="pdf-tag verde">numeradas em verde</span></div>
+              <div style="background:#f4fbf6;border-left:3px solid #20a064;border-radius:3px;padding:3px 8px;font-size:9px;margin-bottom:2px">① CENTRAL POSTO — Alagoinhas</div>
+              <div style="background:#f4fbf6;border-left:3px solid #20a064;border-radius:3px;padding:3px 8px;font-size:9px;margin-bottom:2px">② POSTO DALILA — Inhambupe</div>
+              <div style="color:#8090b0;font-size:8px;margin-top:6px">+ Mapa Google Maps (imagem)</div>
+            </div>
+          </div>
+
+          <!-- Miniatura da Página 2 (Retorno) -->
+          <div class="pdf-preview-page">
+            <div class="pdf-preview-hdr">📄 PÁGINA 2 — ROTOGRAMA RETORNO</div>
+            <div class="pdf-preview-body">
+              <div style="background:#1a56c4;border-radius:4px;padding:5px 8px;color:#fff;font-size:9px;font-weight:700;margin-bottom:6px">Cabeçalho azul com logo + título</div>
+              <div style="background:#eef2ff;border:1px solid #c0d2f0;border-radius:4px;padding:4px 8px;font-size:9px;margin-bottom:6px">MOTORISTA: <strong>GILVANEI AVELINO</strong> · PLACA: <strong style="color:#1a56c4">PLR-1A22</strong></div>
+              <div style="background:#fff8e0;border:1px solid #f0d080;border-left:3px solid #c88c14;border-radius:4px;padding:4px 8px;font-size:9px;margin-bottom:6px;font-family:monospace">BA-084 – BR-110 – BR-116 – BR-324</div>
+              <div class="pdf-preview-section">Paradas Retorno <span class="pdf-tag verde">numeradas em verde</span></div>
+              <div style="background:#f4fbf6;border-left:3px solid #20a064;border-radius:3px;padding:3px 8px;font-size:9px;margin-bottom:2px">① POSTO NG CAJUEIRO — Cipó</div>
+              <div style="background:#f4fbf6;border-left:3px solid #20a064;border-radius:3px;padding:3px 8px;font-size:9px;margin-bottom:2px">② POSTO COLIBRI — Nova Soure</div>
+              <div style="background:#f4fbf6;border-left:3px solid #20a064;border-radius:3px;padding:3px 8px;font-size:9px;margin-bottom:6px">③ POSTO DONA ANA — Serrinha</div>
+              <div style="color:#8090b0;font-size:8px;margin-bottom:6px">+ Mapa Google Maps (imagem)</div>
+              <div style="background:#eef2ff;border:1px solid #c0d2f0;border-radius:4px;padding:6px 8px;font-size:9px;text-align:center">
+                <div style="color:#8090b0;font-size:8px">EM CASO DE DÚVIDAS LIGAR</div>
+                <strong style="color:#1a56c4;font-size:11px">75 99930-6620</strong>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <p style="font-size: 12px; color: var(--text2); margin-top: 4px">
+          Legenda:
+          <span style="color: #3d8ef0">■ Azul = Entregas / Dados</span> ·
+          <span style="color: #3dba6f">■ Verde = Paradas</span> ·
+          <span style="color: #e8a020">■ Âmbar = Rodovias</span>
+        </p>
+      </div>
+
+      <!-- Painel de geração do PDF -->
+      <div class="card">
+        <div class="card-title">Gerar PDF</div>
+        <p style="font-size: 14px; color: var(--text2); margin-bottom: 18px">
+          Ao gerar, todos os dados são salvos automaticamente no banco local.
+        </p>
+        <div class="actions">
+          <button class="btn btn-primary" onclick="gerarPDF()" aria-label="Baixar PDF do rotograma">⬇ Baixar PDF</button>
+          <button class="btn btn-ghost"   onclick="resetForm()" aria-label="Limpar e começar novo rotograma">🔄 Novo Rotograma</button>
+        </div>
+        <div class="status-bar" id="status-bar" role="alert"></div>
+      </div>
+
+      <!-- Resumo textual dos dados preenchidos -->
+      <div class="card">
+        <div class="card-title">Resumo dos Dados</div>
+        <div id="resumo" style="font-size: 13px; line-height: 1.9; color: var(--text2)">
+          <em>Preencha as abas Ida e Retorno para ver o resumo aqui.</em>
+        </div>
+      </div>
+
+    </div><!-- /tab-preview -->
+
+  </main>
+
+  <!-- ============================================================
+       MODAL — adicionar registros manualmente ao banco
+  ============================================================ -->
+  <div
+    id="modal-overlay"
+    onclick="if (event.target === this) closeModal()"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modal-title"
+  >
+    <div class="modal-box">
+      <div class="modal-title" id="modal-title">Adicionar</div>
+      <div class="field">
+        <label id="modal-label" for="modal-input">Valor</label>
+        <input id="modal-input" type="text" onkeydown="if (event.key === 'Enter') modalOk()">
+      </div>
+      <div style="display: flex; gap: 10px; margin-top: 18px">
+        <button class="btn btn-primary" onclick="modalOk()" style="flex: 1">Salvar</button>
+        <button class="btn btn-ghost"   onclick="closeModal()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       RODAPÉ — informações do sistema e créditos do desenvolvedor
+  ============================================================ -->
+  <footer class="site-footer">
+    <!-- Lado esquerdo: nome do produto e versão -->
+    <div class="footer-left">
+      <span class="footer-brand">HORA DISTRIBUIDORA DE PETROLEO LTDA</span>
+      <div class="footer-divider" aria-hidden="true"></div>
+      <span>Gerador de Rotograma v2.0</span>
+      <div class="footer-divider" aria-hidden="true"></div>
+      <span>© <span id="footer-year"></span> Todos os direitos reservados RangelDev</span>
+    </div>
+
+    <!-- Lado direito: crédito do desenvolvedor -->
+    <div class="footer-right">
+      <div class="footer-dev">
+        <span class="footer-dev-label">Desenvolvido por</span>
+        <span class="footer-dev-name">Kaique Rangel</span>
+        <a
+          href="https://github.com/Kaiquerangel"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="footer-dev-link"
+          aria-label="Ver perfil de Kaique Rangel no GitHub"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ============================================================
+       JAVASCRIPT
+       Organização dos módulos:
+         1. CONSTANTES          — chaves de storage e limites
+         2. ESTADO GLOBAL (S)   — fonte única da verdade
+         3. LOGO                — upload e persistência do logotipo
+         4. DB                  — CRUD no localStorage
+         5. FUZZY               — algoritmo de busca aproximada
+         6. AC                  — sistema de autocomplete
+         7. CAD                 — renderização da aba Cadastros
+         8. MODAL               — diálogo de adição manual
+         9. IMPORT / EXPORT     — backup e restauração do banco
+        10. FORM                — listas dinâmicas (entregas/paradas/rodovias)
+        11. MAPA                — upload e drag-and-drop de imagens
+        12. TABS                — troca de abas
+        13. COLETA             — coleta dos dados de S para gerar o PDF
+        14. VALIDAÇÃO          — verifica campos obrigatórios
+        15. RESUMO             — painel de pré-visualização textual
+        16. RESET              — limpar formulário
+        17. STATUS             — barra de feedback
+        18. PDF                — construção das páginas do PDF
+        19. UTILS              — funções auxiliares
+        20. INIT               — ponto de entrada da aplicação
+  ============================================================ -->
+  <script>
+  'use strict';
+
+  /* ================================================================
+     1. CONSTANTES
+     Chaves do localStorage e limites de cada coleção.
+     Centralizadas aqui para evitar magic strings no código.
+  ================================================================ */
+  const STORAGE_KEY  = 'hora_roto_v3';   // chave principal do banco
+  const LOGO_KEY     = 'hora_logo_v1';   // chave da imagem do logotipo
+  const SEQ_KEY      = 'hora_roto_seq';  // chave do contador de IDs sequenciais
+
+  /** Número máximo de itens por coleção no banco local */
+  const DB_LIMITS = {
+    motoristas   : 200,
+    placas       : 200,
+    bases        : 100,
+    rodovias     : 200,
+    rodovias_item: 200,
+    contatos     : 100,
+    postos       : 300,
+    cidades      : 300,
+  };
+
+  /** Emoji de ícone exibido ao lado de cada item por coleção */
+  const COLLECTION_ICONS = {
+    motoristas   : '👤',
+    placas       : '🚛',
+    bases        : '🏭',
+    rodovias     : '🛣️',
+    rodovias_item: '🛣️',
+    contatos     : '📞',
+    postos       : '⛽',
+    cidades      : '📍',
+  };
+
+  /** Número de itens por página na listagem de cadastros */
+  const PAGE_SIZE = 15;
+
+  /**
+   * Configuração padrão de linhas criadas ao iniciar ou resetar o formulário.
+   * Altere aqui para mudar o comportamento — não há números fixos no código.
+   */
+  const FORM_DEFAULTS = {
+    entregas   : 2,
+    paradasIda : 3,
+    paradasRet : 3,
+    rodovias   : 1,
+  };
+
+
+  /* ================================================================
+     2. ESTADO GLOBAL (S)
+     Fonte única da verdade para todos os dados do formulário.
+     O DOM apenas reflete este objeto — nunca é lido de volta.
+  ================================================================ */
+  const S = {
+    // Campos simples
+    motorista : '',
+    placa     : '',
+    data      : '',
+    base      : '',
+    contato   : '',
+
+    // Listas dinâmicas
+    entregas    : [],   // [{ nome: string, cidade: string }]
+    paradasIda  : [],   // [{ posto: string, cidade: string }]
+    paradasRet  : [],   // [{ posto: string, cidade: string }]
+    rodovias_ida: [],   // [{ codigo: string }]
+    rodovias_ret: [],   // [{ codigo: string }]
+
+    // Imagens dos mapas (base64 ou null)
+    mapaIda : null,
+    mapaRet : null,
+  };
+
+
+  /* ================================================================
+     3. LOGO
+     Gerencia o upload, persistência e exibição do logotipo
+     da empresa no header e nos PDFs gerados.
+  ================================================================ */
+  const Logo = {
+    _data: null,  // imagem em base64 ou null
+
+    /** Carrega um arquivo de imagem selecionado pelo usuário */
+    load(evt) {
+      const file = evt.target.files[0];
+      if (!file || !file.type.startsWith('image/')) return;
+
+      const reader = new FileReader();
+      reader.onload = e => {
+        const data = e.target.result;
+        this._data = data;
+        localStorage.setItem(LOGO_KEY, data);
+        this._applyToHeader(data);
+      };
+      reader.readAsDataURL(file);
+      evt.target.value = ''; // permite reselecionar o mesmo arquivo
+    },
+
+    /** Restaura o logo salvo ao inicializar a aplicação */
+    init() {
+      const saved = localStorage.getItem(LOGO_KEY);
+      if (!saved) return;
+      this._data = saved;
+      this._applyToHeader(saved);
+    },
+
+    /** Substitui o ícone do header pelo logotipo carregado */
+    _applyToHeader(data) {
+      const iconEl = document.getElementById('logo-icon-el');
+      const textEl = document.getElementById('logo-text-el');
+      if (!iconEl) return;
+      iconEl.innerHTML = `<img src="${data}" alt="Logo da empresa" style="width:100%;height:100%;object-fit:contain;padding:3px">`;
+      if (textEl) textEl.style.display = 'none';
+    },
+
+    /** Retorna a imagem atual (base64 ou null) */
+    get() { return this._data; },
+
+    /**
+     * Calcula as dimensões da imagem respeitando os limites máximos
+     * e preservando a proporção original.
+     * @param {string} imgData - imagem em base64
+     * @param {number} maxW - largura máxima em mm
+     * @param {number} maxH - altura máxima em mm
+     * @param {Function} cb - callback(w, h)
+     */
+    dims(imgData, maxW, maxH, cb) {
+      const img = new Image();
+      img.onload = () => {
+        const ratio = img.width / img.height;
+        let w = maxW;
+        let h = maxW / ratio;
+        if (h > maxH) { h = maxH; w = maxH * ratio; }
+        cb(Math.round(w * 10) / 10, Math.round(h * 10) / 10);
+      };
+      img.src = imgData;
+    },
+  };
+
+
+  /* ================================================================
+     4. DB — BANCO DE DADOS LOCAL
+     Persistência via localStorage com normalização, deduplicação
+     e controle de frequência de uso.
+  ================================================================ */
+  const DB = {
+
+    /** Carrega o banco do localStorage; retorna estrutura padrão em caso de erro */
+    load() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || this._defaults();
+      } catch {
+        return this._defaults();
+      }
+    },
+
+    /** Estrutura inicial vazia do banco */
+    _defaults() {
+      return {
+        motoristas     : [],
+        placas         : [],
+        bases          : [],
+        rodovias       : [],
+        contatos       : [],
+        postos         : [],
+        cidades        : [],
+        freq           : {},   // { "colecao:valor": contagem }
+        motorista_placa: {},   // { "MOTORISTA": "PLACA" }
+      };
+    },
+
+    /** Persiste o banco e atualiza o badge do header */
+    save(db) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+      this.updateBadge();
+    },
+
+    /** Atualiza o contador de registros exibido no header */
+    updateBadge() {
+      const db = this.load();
+      const collections = ['motoristas', 'placas', 'bases', 'rodovias', 'contatos', 'postos', 'cidades'];
+      const total = collections.reduce((acc, key) => acc + (db[key] || []).length, 0);
+      const el = document.getElementById('db-count');
+      if (el) el.textContent = total.toLocaleString('pt-BR') + ' registros';
+    },
+
+    /**
+     * Normaliza um valor antes de armazenar.
+     * Contatos preservam capitalização; demais coleções são convertidas para maiúsculas.
+     */
+    _normalize(collection, value) {
+      const trimmed = value.trim().replace(/\s+/g, ' ');
+      return collection === 'contatos' ? trimmed : trimmed.toUpperCase();
+    },
+
+    /**
+     * Adiciona ou atualiza um item na coleção.
+     * Incrementa frequência, move para o topo e respeita o limite máximo.
+     */
+    add(collection, value) {
+      if (!value || !value.trim()) return;
+
+      const normalized = this._normalize(collection, value);
+      if (!normalized) return;
+
+      const db  = this.load();
+      const col = db[collection] || (db[collection] = []);
+      const freq = db.freq || (db.freq = {});
+      const key  = `${collection}:${normalized}`;
+
+      // Incrementa frequência de uso
+      freq[key] = (freq[key] || 0) + 1;
+
+      // Remove duplicatas normalizadas antes de reinserir
+      db[collection] = col.filter(x => this._normalize(collection, x) !== normalized);
+      db[collection].unshift(normalized);
+
+      // Aplica o limite máximo da coleção
+      const limit = DB_LIMITS[collection] || 200;
+      if (db[collection].length > limit) db[collection] = db[collection].slice(0, limit);
+
+      this.save(db);
+    },
+
+    /** Remove um item da coleção e seu registro de frequência */
+    remove(collection, value) {
+      const db = this.load();
+      if (db[collection]) {
+        db[collection] = db[collection].filter(x => x !== value);
+      }
+      delete db.freq[`${collection}:${value}`];
+      // Limpa também o vínculo motorista→placa ao remover um motorista
+      if (collection === 'motoristas') delete db.motorista_placa[value];
+      this.save(db);
+    },
+
+    /** Registra o vínculo entre motorista e placa para preenchimento automático */
+    linkMotoristaPlaca(motorista, placa) {
+      if (!motorista || motorista === '—' || !placa || placa === '—') return;
+      const db = this.load();
+      db.motorista_placa[motorista] = placa;
+      this.save(db);
+    },
+
+    /**
+     * Migração de dados legados: normaliza e remove duplicatas fantasma
+     * geradas por versões anteriores da aplicação.
+     * Executado uma única vez na inicialização.
+     */
+    migrate() {
+      const db = this.load();
+      const collections = ['motoristas', 'placas', 'bases', 'rodovias', 'rodovias_item', 'contatos', 'postos', 'cidades'];
+      let changed = false;
+
+      collections.forEach(col => {
+        if (!db[col]) return;
+        const seen    = new Set();
+        const cleaned = [];
+
+        db[col].forEach(v => {
+          const norm = (col === 'contatos' ? v.trim() : v.trim().toUpperCase()).replace(/\s+/g, ' ');
+          if (norm && !seen.has(norm)) { seen.add(norm); cleaned.push(norm); }
+          else changed = true;
+        });
+
+        db[col] = cleaned;
+      });
+
+      if (changed) this.save(db);
+    },
+  };
+
+
+  /* ================================================================
+     5. FUZZY — BUSCA APROXIMADA
+     Algoritmo de correspondência fuzzy com pontuação por relevância.
+     Prioridade: igualdade > prefixo > substring > palavras > caracteres.
+  ================================================================ */
+  const Fuzzy = {
+
+    /**
+     * Testa se `str` corresponde a `query` de forma fuzzy.
+     * @returns {{ score: number, spans: [number, number][] } | null}
+     */
+    match(str, query) {
+      if (!query) return { score: 1000, spans: [] };
+
+      const s = str.toUpperCase();
+      const q = query.toUpperCase();
+
+      // Correspondência exata
+      if (s === q) return { score: 10000, spans: [[0, str.length]] };
+
+      // Prefixo exato
+      if (s.startsWith(q)) return { score: 5000 + (1000 - str.length), spans: [[0, q.length]] };
+
+      // Substring contínua
+      const ci = s.indexOf(q);
+      if (ci !== -1) {
+        const bonus = (ci === 0 || s[ci - 1] === ' ') ? 500 : 0;
+        return { score: 2000 + bonus + (1000 - str.length), spans: [[ci, ci + q.length]] };
+      }
+
+      // Todas as palavras da query presentes
+      const qWords = q.split(/\s+/).filter(Boolean);
+      if (qWords.length > 1 && qWords.every(w => s.includes(w))) {
+        const spans = [];
+        qWords.forEach(w => {
+          let start = 0;
+          while (true) {
+            const idx = s.indexOf(w, start);
+            if (idx === -1) break;
+            spans.push([idx, idx + w.length]);
+            start = idx + 1;
+          }
+        });
+        return { score: 1500, spans };
+      }
+
+      // Caracteres em sequência (fuzzy clássico)
+      let qi = 0;
+      const spans = [];
+      let spanStart = -1;
+
+      for (let si = 0; si < s.length && qi < q.length; si++) {
+        if (s[si] === q[qi]) {
+          if (spanStart === -1) spanStart = si;
+          qi++;
+          if (qi === q.length || s[si + 1] !== q[qi]) {
+            spans.push([spanStart, si + 1]);
+            spanStart = -1;
+          }
+        } else if (spanStart !== -1) {
+          spans.push([spanStart, si]);
+          spanStart = -1;
+        }
+      }
+
+      if (qi === q.length) return { score: Math.round((q.length / s.length) * 800), spans };
+      return null;
+    },
+
+    /**
+     * Busca e ordena uma lista de strings por relevância à query.
+     * @param {string[]} list - lista de valores
+     * @param {string}   query - texto digitado pelo usuário
+     * @param {{ limit?: number, freqMap?: object }} options
+     * @returns {{ value: string, html: string, score: number }[]}
+     */
+    search(list, query, { limit = 8, freqMap = {} } = {}) {
+      // Sem query: retorna os mais frequentes
+      if (!query || !query.trim()) {
+        return list.slice(0, limit).map(item => ({
+          value: item,
+          html : escHtml(item),
+          score: freqMap[item] || 0,
+        }));
+      }
+
+      const results = [];
+      for (const item of list) {
+        const match = this.match(item, query.trim());
+        if (match) {
+          results.push({
+            value: item,
+            score: match.score + (freqMap[item] || 0) * 10,
+            spans: match.spans,
+          });
+        }
+      }
+
+      results.sort((a, b) => b.score - a.score);
+
+      return results.slice(0, limit).map(r => ({
+        value: r.value,
+        score: r.score,
+        html : this.highlight(r.value, r.spans),
+      }));
+    },
+
+    /**
+     * Envolve os trechos correspondentes com <mark> para destaque visual.
+     * @param {string} str - string original
+     * @param {[number, number][]} spans - intervalos a destacar
+     * @returns {string} HTML com as marcações
+     */
+    highlight(str, spans) {
+      if (!spans || spans.length === 0) return escHtml(str);
+
+      // Mescla intervalos sobrepostos
+      const merged = [];
+      const sorted = [...spans].sort((a, b) => a[0] - b[0]);
+      for (const [s, e] of sorted) {
+        if (merged.length && s <= merged[merged.length - 1][1]) {
+          merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], e);
+        } else {
+          merged.push([s, e]);
+        }
+      }
+
+      let out = '';
+      let pos = 0;
+      for (const [s, e] of merged) {
+        out += escHtml(str.slice(pos, s));
+        out += `<mark>${escHtml(str.slice(s, e))}</mark>`;
+        pos = e;
+      }
+      out += escHtml(str.slice(pos));
+      return out;
+    },
+  };
+
+
+  /* ================================================================
+     6. AC — AUTOCOMPLETE
+     Gerencia a abertura, renderização, navegação por teclado e
+     seleção dos dropdowns de sugestões fuzzy.
+     Usa createElement (sem innerHTML com strings longas) para segurança.
+  ================================================================ */
+  const AC = {
+    _timers  : {},     // debounce timers por campo
+    _open    : null,   // id do campo atualmente aberto
+    _picking : false,  // flag: impede reabertura durante seleção de item
+
+    /** Agenda a renderização do dropdown com debounce de 80ms */
+    open(fieldId, collection) {
+      if (this._picking) return;
+      clearTimeout(this._timers[fieldId]);
+      this._timers[fieldId] = setTimeout(() => this._render(fieldId, collection), 80);
+    },
+
+    /** Constrói e exibe o dropdown de sugestões para o campo informado */
+    _render(fieldId, collection) {
+      const input = document.getElementById(fieldId);
+      const drop  = document.getElementById('acd-' + fieldId);
+      if (!input || !drop) return;
+
+      const query   = input.value.trim();
+      const db      = DB.load();
+      const list    = db[collection] || [];
+      const freqMap = {};
+      list.forEach(v => { freqMap[v] = (db.freq || {})[`${collection}:${v}`] || 0; });
+
+      const results = Fuzzy.search(list, query, { limit: 9, freqMap });
+
+      // Reconstrói o dropdown do zero
+      drop.innerHTML = '';
+
+      // Estado: banco vazio
+      if (results.length === 0 && list.length === 0) {
+        const empty = document.createElement('div');
+        empty.className   = 'ac-empty';
+        empty.textContent = 'Nenhum registro ainda. Gere um PDF para cadastrar automaticamente.';
+        drop.appendChild(empty);
+        drop.classList.add('open');
+        return;
+      }
+
+      // Estado: sem resultados para a query
+      if (results.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'ac-empty';
+        empty.innerHTML = `Nenhum resultado para "<strong>${escHtml(query)}</strong>"`;
+        drop.appendChild(empty);
+        drop.classList.add('open');
+        return;
+      }
+
+      const totalMatched = query
+        ? list.filter(x => Fuzzy.match(x, query)).length
+        : list.length;
+
+      // ── Barra de busca interna do dropdown
+      const searchRow = document.createElement('div');
+      searchRow.className = 'ac-search-row';
+
+      const searchIcon = document.createElement('span');
+      searchIcon.className   = 'ac-search-icon';
+      searchIcon.textContent = '🔍';
+      searchIcon.setAttribute('aria-hidden', 'true');
+
+      const searchInput = document.createElement('input');
+      searchInput.className   = 'ac-search-input';
+      searchInput.id          = 'acs-' + fieldId;
+      searchInput.type        = 'text';
+      searchInput.placeholder = `Filtrar ${list.length} ${COLLECTION_ICONS[collection] || ''} registros...`;
+      searchInput.value       = query;
+      searchInput.setAttribute('aria-label', 'Filtrar sugestões');
+      searchInput.addEventListener('input', () => {
+        const mainInput = document.getElementById(fieldId);
+        if (mainInput) mainInput.value = searchInput.value;
+        this._render(fieldId, collection);
+        document.getElementById('acs-' + fieldId)?.focus();
+      });
+      searchInput.addEventListener('keydown', e => this.key(e, fieldId, true));
+
+      const searchCount = document.createElement('span');
+      searchCount.className   = 'ac-search-count';
+      searchCount.textContent = `${results.length} de ${totalMatched}`;
+
+      searchRow.appendChild(searchIcon);
+      searchRow.appendChild(searchInput);
+      searchRow.appendChild(searchCount);
+      drop.appendChild(searchRow);
+
+      // ── Lista de itens
+      const listEl = document.createElement('div');
+      listEl.className = 'ac-list';
+      listEl.id        = 'acl-' + fieldId;
+
+      // Rótulo de grupo apenas quando sem query (mostra itens recentes)
+      if (!query) {
+        const groupLabel = document.createElement('div');
+        groupLabel.className   = 'ac-group-label';
+        groupLabel.textContent = 'Usados recentemente · por frequência';
+        listEl.appendChild(groupLabel);
+      }
+
+      // Renderiza cada item de sugestão
+      results.forEach(r => {
+        const freq = freqMap[r.value] || 0;
+
+        const item = document.createElement('div');
+        item.className = 'ac-item';
+
+        // Ícone da coleção
+        const iconEl = document.createElement('span');
+        iconEl.className   = 'ac-item-icon';
+        iconEl.textContent = COLLECTION_ICONS[collection] || '•';
+        iconEl.setAttribute('aria-hidden', 'true');
+
+        // Corpo: nome com destaque e (opcional) sub-linha motorista→placa
+        const body = document.createElement('div');
+        body.className = 'ac-item-body';
+
+        const mainEl = document.createElement('div');
+        mainEl.className = 'ac-item-main';
+        mainEl.innerHTML = r.html;  // HTML seguro gerado pelo Fuzzy.highlight
+        body.appendChild(mainEl);
+
+        // Sub-linha: placa vinculada ao motorista
+        if (collection === 'motoristas') {
+          const linked = (db.motorista_placa || {})[r.value];
+          if (linked) {
+            const sub = document.createElement('div');
+            sub.className   = 'ac-item-sub';
+            sub.textContent = `🚛 ${linked}`;
+            body.appendChild(sub);
+          }
+        }
+
+        // Badge de frequência (visível apenas quando freq > 1)
+        const freqBadge = document.createElement('span');
+        freqBadge.className   = 'ac-item-freq';
+        freqBadge.textContent = freq > 1 ? `${freq}×` : '';
+
+        // Botão de exclusão do item
+        const delBtn = document.createElement('button');
+        delBtn.className   = 'ac-item-del';
+        delBtn.textContent = '✕';
+        delBtn.setAttribute('aria-label', `Remover ${r.value}`);
+        delBtn.addEventListener('mousedown', e => this._del(e, collection, r.value, fieldId));
+
+        item.appendChild(iconEl);
+        item.appendChild(body);
+        if (freq > 1) item.appendChild(freqBadge);
+        item.appendChild(delBtn);
+
+        item.addEventListener('mousedown', e => this._pick(e, fieldId, collection, r.value));
+        listEl.appendChild(item);
+      });
+
+      drop.appendChild(listEl);
+
+      // ── Rodapé com atalhos de teclado
+      const footer = document.createElement('div');
+      footer.className = 'ac-footer';
+      const hidden = totalMatched - results.length;
+      footer.innerHTML = hidden > 0
+        ? `<span>${hidden} oculto${hidden > 1 ? 's' : ''}. Continue digitando.</span><span><kbd>↑↓</kbd> nav · <kbd>Enter</kbd> sel</span>`
+        : `<span>&nbsp;</span><span><kbd>↑↓</kbd> nav · <kbd>Enter</kbd> sel · <kbd>Esc</kbd> fechar</span>`;
+      drop.appendChild(footer);
+
+      drop.classList.add('open');
+      this._open = fieldId;
+    },
+
+    /**
+     * Seleciona um item do dropdown.
+     * Bloqueia a reabertura do dropdown durante o processo (_picking)
+     * para evitar o efeito "pisca-pisca".
+     */
+    _pick(e, fieldId, collection, value) {
+      e.preventDefault();
+      this._picking = true;
+
+      const mainInput = document.getElementById(fieldId);
+      if (mainInput) {
+        mainInput.value = value;
+        // Atualiza o estado S diretamente (fonte única da verdade)
+        this._updateState(fieldId, value);
+        mainInput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+
+      this.close(fieldId);
+
+      // Preenchimento automático da placa via vínculo motorista→placa
+      if (collection === 'motoristas') {
+        const db     = DB.load();
+        const linked = (db.motorista_placa || {})[value];
+        if (linked) {
+          const placaInput = document.getElementById('placa');
+          if (placaInput) {
+            placaInput.value = linked;
+            S.placa = linked;
+            placaInput.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          const banner = document.getElementById('af-placa');
+          if (banner) {
+            banner.style.display = 'block';
+            setTimeout(() => { banner.style.display = 'none'; }, 3000);
+          }
+        }
+      }
+
+      DB.add(collection, value);
+      setTimeout(() => { this._picking = false; }, 120);
+    },
+
+    /**
+     * Atualiza o campo correspondente em S conforme o fieldId.
+     * Campos de listas (entregas/paradas/rodovias) são atualizados
+     * diretamente no oninput dos inputs gerados pelo Form.
+     */
+    _updateState(fieldId, value) {
+      const stateMap = {
+        motorista: () => { S.motorista = value; },
+        placa    : () => { S.placa = value; },
+        base     : () => { S.base  = value; },
+        contato  : () => { S.contato = value; },
+      };
+      stateMap[fieldId]?.();
+    },
+
+    /** Remove um item do banco via botão "✕" no dropdown */
+    _del(e, collection, value, fieldId) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!confirm(`Remover "${value}"?`)) return;
+      DB.remove(collection, value);
+      Cad.renderAll();
+      if (document.getElementById(fieldId)) this._render(fieldId, collection);
+    },
+
+    /** Fecha o dropdown após um curto delay (permite o clique ser processado antes) */
+    blur(fieldId) {
+      setTimeout(() => this.close(fieldId), 200);
+    },
+
+    /** Fecha o dropdown de um campo específico */
+    close(fieldId) {
+      const drop = document.getElementById('acd-' + fieldId);
+      if (drop) drop.classList.remove('open');
+      if (this._open === fieldId) this._open = null;
+    },
+
+    /** Fecha todos os dropdowns abertos */
+    closeAll() {
+      document.querySelectorAll('.ac-drop.open').forEach(d => d.classList.remove('open'));
+      this._open = null;
+    },
+
+    /** Limpa o valor de um campo e fecha todos os dropdowns */
+    clearInput(fieldId) {
+      const input = document.getElementById(fieldId);
+      if (input) {
+        input.value = '';
+        this._updateState(fieldId, '');
+        input.focus();
+      }
+      this.closeAll();
+    },
+
+    /** Navegação por teclado dentro do dropdown (↑↓ Enter Tab Esc) */
+    key(e, fieldId) {
+      const drop = document.getElementById('acd-' + fieldId);
+      if (!drop || !drop.classList.contains('open')) return;
+
+      const listEl = drop.querySelector('.ac-list');
+      if (!listEl) return;
+
+      const items = Array.from(listEl.querySelectorAll('.ac-item'));
+      let focusedIdx = items.findIndex(x => x.classList.contains('focused'));
+
+      const focusItem = idx => {
+        if (items[idx]) {
+          items[idx].classList.add('focused');
+          items[idx].scrollIntoView({ block: 'nearest' });
+        }
+      };
+
+      const blurCurrent = () => {
+        if (focusedIdx >= 0) items[focusedIdx].classList.remove('focused');
+      };
+
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          blurCurrent();
+          focusedIdx = Math.min(focusedIdx + 1, items.length - 1);
+          if (focusedIdx < 0) focusedIdx = 0;
+          focusItem(focusedIdx);
+          break;
+
+        case 'ArrowUp':
+          e.preventDefault();
+          blurCurrent();
+          focusedIdx = Math.max(focusedIdx - 1, 0);
+          focusItem(focusedIdx);
+          break;
+
+        case 'Enter':
+          if (focusedIdx >= 0) {
+            e.preventDefault();
+            items[focusedIdx].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          }
+          break;
+
+        case 'Tab':
+          if (focusedIdx >= 0) {
+            e.preventDefault();
+            items[focusedIdx].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          } else {
+            this.close(fieldId);
+          }
+          break;
+
+        case 'Escape':
+          e.preventDefault();
+          this.close(fieldId);
+          document.getElementById(fieldId)?.focus();
+          break;
+      }
+    },
+  };
+
+  // Fecha todos os dropdowns ao clicar fora de qualquer ac-wrap
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.ac-wrap') && !e.target.closest('.ac-drop')) {
+      AC.closeAll();
+    }
+  });
+
+
+  /* ================================================================
+     7. CAD — RENDERIZAÇÃO DA ABA CADASTROS
+     Exibe os registros do banco com paginação, busca e destaque fuzzy.
+     Usa createElement para construção segura do DOM.
+  ================================================================ */
+
+  /** Página atual por coleção (estado da paginação) */
+  const _cadPages = {};
+
+  const Cad = {
+
+    /** Renderiza a listagem de uma coleção específica */
+    render(collection) {
+      const db      = DB.load();
+      const list    = db[collection] || [];
+      const query   = document.getElementById('srch-' + collection)?.value?.trim() || '';
+      const freqMap = {};
+      list.forEach(v => { freqMap[v] = (db.freq || {})[`${collection}:${v}`] || 0; });
+
+      // Filtra e ordena
+      let filtered = query
+        ? list.filter(x => Fuzzy.match(x, query))
+        : [...list].sort((a, b) => (freqMap[b] || 0) - (freqMap[a] || 0));
+
+      // Atualiza badge de contagem
+      const cntEl = document.getElementById('cnt-' + collection);
+      if (cntEl) cntEl.textContent = list.length;
+
+      // Paginação
+      const total    = filtered.length;
+      const pages    = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      const safePage = Math.min(_cadPages[collection] || 0, pages - 1);
+      _cadPages[collection] = safePage;
+      const slice = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+
+      const cont = document.getElementById('db-' + collection);
+      if (!cont) return;
+
+      // Reconstrói a lista
+      cont.innerHTML = '';
+
+      if (total === 0) {
+        const empty = document.createElement('div');
+        empty.className   = 'db-empty';
+        empty.textContent = query ? `Nenhum resultado para "${query}".` : 'Nenhum registro ainda.';
+        cont.appendChild(empty);
+      } else {
+        slice.forEach(item => {
+          const freq = freqMap[item] || 0;
+          const row  = document.createElement('div');
+          row.className = 'db-row';
+          row.setAttribute('role', 'listitem');
+
+          const icon = document.createElement('span');
+          icon.style.cssText  = 'font-size: 13px; opacity: .6';
+          icon.textContent    = COLLECTION_ICONS[collection] || '•';
+          icon.setAttribute('aria-hidden', 'true');
+
+          const main = document.createElement('div');
+          main.className = 'db-row-main';
+          main.title     = item;
+          main.innerHTML = query
+            ? Fuzzy.highlight(item, Fuzzy.match(item, query)?.spans)
+            : escHtml(item);
+
+          const delBtn = document.createElement('button');
+          delBtn.className   = 'db-row-del';
+          delBtn.textContent = '✕';
+          delBtn.setAttribute('aria-label', `Remover ${item}`);
+          delBtn.addEventListener('click', () => {
+            if (confirm('Remover?')) { DB.remove(collection, item); Cad.renderAll(); }
+          });
+
+          row.appendChild(icon);
+          row.appendChild(main);
+
+          if (freq > 0) {
+            const badge = document.createElement('span');
+            badge.className   = 'db-row-freq';
+            badge.textContent = `${freq}×`;
+            row.appendChild(badge);
+          }
+
+          row.appendChild(delBtn);
+          cont.appendChild(row);
+        });
+      }
+
+      // Controles de paginação
+      this._renderPagination(collection, total, safePage, pages);
+    },
+
+    /** Renderiza os controles de paginação abaixo de uma lista */
+    _renderPagination(collection, total, currentPage, totalPages) {
+      const pgEl = document.getElementById('pg-' + collection);
+      if (!pgEl) return;
+      pgEl.innerHTML = '';
+
+      const info = document.createElement('span');
+      if (totalPages <= 1 && total > 0) {
+        info.textContent = `${total} registro${total > 1 ? 's' : ''}`;
+      } else if (totalPages > 1) {
+        info.textContent = `${total} registros · página ${currentPage + 1} de ${totalPages}`;
+      }
+      pgEl.appendChild(info);
+
+      if (totalPages <= 1) return;
+
+      const btnWrap = document.createElement('span');
+      btnWrap.style.cssText = 'display: flex; gap: 4px';
+
+      const prevBtn = document.createElement('button');
+      prevBtn.className   = 'db-page-btn';
+      prevBtn.textContent = '‹';
+      prevBtn.disabled    = currentPage === 0;
+      prevBtn.setAttribute('aria-label', 'Página anterior');
+      prevBtn.addEventListener('click', () => {
+        _cadPages[collection] = currentPage - 1;
+        this.render(collection);
+      });
+
+      const nextBtn = document.createElement('button');
+      nextBtn.className   = 'db-page-btn';
+      nextBtn.textContent = '›';
+      nextBtn.disabled    = currentPage >= totalPages - 1;
+      nextBtn.setAttribute('aria-label', 'Próxima página');
+      nextBtn.addEventListener('click', () => {
+        _cadPages[collection] = currentPage + 1;
+        this.render(collection);
+      });
+
+      btnWrap.appendChild(prevBtn);
+      btnWrap.appendChild(nextBtn);
+      pgEl.appendChild(btnWrap);
+    },
+
+    /** Renderiza a lista de vínculos motorista→placa */
+    renderVinculos() {
+      const db       = DB.load();
+      const vinculos = db.motorista_placa || {};
+      const keys     = Object.keys(vinculos);
+      const el       = document.getElementById('db-vinculos');
+      const cntEl    = document.getElementById('cnt-vinculos');
+
+      if (cntEl) cntEl.textContent = keys.length;
+      if (!el) return;
+
+      el.innerHTML = '';
+
+      if (keys.length === 0) {
+        const empty = document.createElement('div');
+        empty.className   = 'db-empty';
+        empty.textContent = 'Nenhum vínculo ainda.';
+        el.appendChild(empty);
+        return;
+      }
+
+      keys.forEach(motorista => {
+        const placa = vinculos[motorista];
+        const row   = document.createElement('div');
+        row.className = 'db-row';
+        row.setAttribute('role', 'listitem');
+
+        const icon = document.createElement('span');
+        icon.style.cssText  = 'font-size: 12px; opacity: .6';
+        icon.textContent    = '🔗';
+        icon.setAttribute('aria-hidden', 'true');
+
+        const main = document.createElement('div');
+        main.className = 'db-row-main';
+        main.innerHTML = `👤 <b>${escHtml(motorista)}</b> → 🚛 ${escHtml(placa)}`;
+
+        const delBtn = document.createElement('button');
+        delBtn.className   = 'db-row-del';
+        delBtn.textContent = '✕';
+        delBtn.setAttribute('aria-label', `Remover vínculo de ${motorista}`);
+        delBtn.addEventListener('click', () => {
+          if (!confirm('Remover?')) return;
+          const dbData = DB.load();
+          delete dbData.motorista_placa[motorista];
+          DB.save(dbData);
+          Cad.renderAll();
+        });
+
+        row.appendChild(icon);
+        row.appendChild(main);
+        row.appendChild(delBtn);
+        el.appendChild(row);
+      });
+    },
+
+    /** Renderiza todas as seções da aba Cadastros */
+    renderAll() {
+      ['motoristas', 'placas', 'bases', 'rodovias', 'postos', 'cidades'].forEach(c => this.render(c));
+      this.renderVinculos();
+      DB.updateBadge();
+    },
+  };
+
+
+  /* ================================================================
+     8. MODAL — ADICIONAR REGISTROS MANUALMENTE
+  ================================================================ */
+
+  /** Coleção alvo do modal atualmente aberto */
+  let _modalCollection = '';
+
+  /** Abre o modal de adição para a coleção informada */
+  function openModal(collection, label) {
+    _modalCollection = collection;
+    document.getElementById('modal-title').textContent = `Adicionar ${label}`;
+    document.getElementById('modal-label').textContent = label;
+    document.getElementById('modal-input').value = '';
+    document.getElementById('modal-overlay').style.display = 'flex';
+    setTimeout(() => document.getElementById('modal-input').focus(), 60);
+  }
+
+  /** Fecha o modal */
+  function closeModal() {
+    document.getElementById('modal-overlay').style.display = 'none';
+  }
+
+  /** Salva o valor digitado no modal e fecha */
+  function modalOk() {
+    const value = document.getElementById('modal-input').value.trim();
+    if (value) {
+      DB.add(_modalCollection, value);
+      Cad.renderAll();
+    }
+    closeModal();
+  }
+
+
+  /* ================================================================
+     9. IMPORT / EXPORT — BACKUP DO BANCO DE DADOS
+  ================================================================ */
+
+  /** Exporta todo o banco como arquivo JSON */
+  function exportDb() {
+    const db   = DB.load();
+    const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href     = URL.createObjectURL(blob);
+    link.download = `hora_backup_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+  }
+
+  /** Importa um arquivo JSON e substitui o banco atual */
+  function importDb(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        Cad.renderAll();
+        setStatus('✓ Backup importado!', 'ok');
+      } catch {
+        setStatus('Arquivo inválido. Verifique o JSON.', 'err');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  /** Apaga todo o banco após confirmação do usuário */
+  function clearAllDb() {
+    if (!confirm('Apagar TODOS os registros? Esta ação não pode ser desfeita.')) return;
+    localStorage.removeItem(STORAGE_KEY);
+    Cad.renderAll();
+    setStatus('Banco de dados limpo.', 'ok');
+  }
+
+
+  /* ================================================================
+     10. FORM — LISTAS DINÂMICAS
+     Gerencia as listas de entregas, paradas e rodovias.
+     Usa createElement (sem innerHTML de strings longas) e
+     mantém S como fonte única da verdade.
+  ================================================================ */
+  const Form = {
+
+    /* ── ENTREGAS ─────────────────────────────────────────────── */
+
+    /** Adiciona uma entrega ao estado e re-renderiza a lista */
+    addEntrega(nome = '', cidade = '') {
+      S.entregas.push({ nome, cidade });
+      this._renderEntregas();
+    },
+
+    /** Remove a entrega do índice `i` e re-renderiza */
+    removeEntrega(i) {
+      S.entregas.splice(i, 1);
+      this._renderEntregas();
+    },
+
+    /** Reconstrói a lista de entregas no DOM a partir de S.entregas */
+    _renderEntregas() {
+      const cont = document.getElementById('entregas-list');
+      cont.innerHTML = '';
+
+      S.entregas.forEach((entrega, i) => {
+        const row = document.createElement('div');
+        row.className = 'parada-row';
+        row.setAttribute('role', 'listitem');
+
+        const num = this._createNumBadge(i + 1);
+
+        const nomeWrap = this._createAcWrap(
+          `en-n-${i}`,
+          entrega.nome,
+          'Cliente / Posto',
+          'postos',
+          v => { S.entregas[i].nome = v; },
+          `Nome da entrega ${i + 1}`
+        );
+
+        const cidadeWrap = this._createAcWrap(
+          `en-c-${i}`,
+          entrega.cidade,
+          'Cidade',
+          'cidades',
+          v => { S.entregas[i].cidade = v; },
+          `Cidade da entrega ${i + 1}`
+        );
+
+        const rmBtn = this._createRemoveButton(`Remover entrega ${i + 1}`, () => this.removeEntrega(i));
+
+        row.appendChild(num);
+        row.appendChild(nomeWrap);
+        row.appendChild(cidadeWrap);
+        row.appendChild(rmBtn);
+        cont.appendChild(row);
+      });
+    },
+
+    /* ── PARADAS ──────────────────────────────────────────────── */
+
+    /** Adiciona uma parada ao estado de ida ou retorno e re-renderiza */
+    addParada(tipo, posto = '', cidade = '') {
+      this._getParadasArray(tipo).push({ posto, cidade });
+      this._renderParadas(tipo);
+    },
+
+    /** Remove a parada do índice `i` e re-renderiza */
+    removeParada(tipo, i) {
+      this._getParadasArray(tipo).splice(i, 1);
+      this._renderParadas(tipo);
+    },
+
+    /** Reconstrói a lista de paradas de um tipo no DOM */
+    _renderParadas(tipo) {
+      const arr  = this._getParadasArray(tipo);
+      const cont = document.getElementById(`paradas-${tipo}-list`);
+      cont.innerHTML = '';
+
+      arr.forEach((parada, i) => {
+        const row = document.createElement('div');
+        row.className = 'parada-row';
+        row.setAttribute('role', 'listitem');
+
+        const num = this._createNumBadge(i + 1);
+
+        const postoWrap = this._createAcWrap(
+          `pd-${tipo}-p-${i}`,
+          parada.posto,
+          'Nome do posto',
+          'postos',
+          v => { this._getParadasArray(tipo)[i].posto = v; },
+          `Posto da parada ${i + 1} (${tipo})`
+        );
+
+        const cidadeWrap = this._createAcWrap(
+          `pd-${tipo}-c-${i}`,
+          parada.cidade,
+          'Cidade',
+          'cidades',
+          v => { this._getParadasArray(tipo)[i].cidade = v; },
+          `Cidade da parada ${i + 1} (${tipo})`
+        );
+
+        const rmBtn = this._createRemoveButton(`Remover parada ${i + 1} (${tipo})`, () => this.removeParada(tipo, i));
+
+        row.appendChild(num);
+        row.appendChild(postoWrap);
+        row.appendChild(cidadeWrap);
+        row.appendChild(rmBtn);
+        cont.appendChild(row);
+      });
+    },
+
+    /* ── RODOVIAS ─────────────────────────────────────────────── */
+
+    /** Adiciona uma rodovia ao estado de ida ou retorno e re-renderiza */
+    addRodovia(tipo, codigo = '') {
+      this._getRodoviasArray(tipo).push({ codigo });
+      this._renderRodovias(tipo);
+    },
+
+    /** Remove a rodovia do índice `i` e re-renderiza */
+    removeRodovia(tipo, i) {
+      this._getRodoviasArray(tipo).splice(i, 1);
+      this._renderRodovias(tipo);
+    },
+
+    /** Reconstrói a lista de rodovias de um tipo no DOM */
+    _renderRodovias(tipo) {
+      const arr  = this._getRodoviasArray(tipo);
+      const cont = document.getElementById(`rodovias-${tipo}-list`);
+      if (!cont) return;
+      cont.innerHTML = '';
+
+      arr.forEach((rodovia, i) => {
+        const rid = `rv-${tipo}-${i}`;
+
+        const row = document.createElement('div');
+        row.className            = 'parada-row';
+        row.style.gridTemplateColumns = '28px 1fr 34px';
+        row.setAttribute('role', 'listitem');
+
+        const num = this._createNumBadge(i + 1);
+
+        // Wrapper do autocomplete de rodovia
+        const wrap = document.createElement('div');
+        wrap.className = 'ac-wrap';
+        wrap.id        = 'acw-' + rid;
+
+        const inputRow = document.createElement('div');
+        inputRow.className = 'ac-input-row';
+
+        const inp = document.createElement('input');
+        inp.id            = rid;
+        inp.type          = 'text';
+        inp.placeholder   = 'Ex: BR-110';
+        inp.value         = rodovia.codigo;
+        inp.style.cssText = "font-family: 'Barlow Condensed', sans-serif; font-size: 15px; letter-spacing: 1px; text-transform: uppercase";
+        inp.setAttribute('aria-label',    `Rodovia ${i + 1} (${tipo})`);
+        inp.setAttribute('autocomplete',  'off');
+        inp.addEventListener('input',   () => {
+          this._getRodoviasArray(tipo)[i].codigo = inp.value.toUpperCase();
+          AC.open(rid, 'rodovias_item');
+        });
+        inp.addEventListener('focus',   () => AC.open(rid, 'rodovias_item'));
+        inp.addEventListener('keydown',  e => AC.key(e, rid));
+        inp.addEventListener('blur',    () => { AC.blur(rid); DB.add('rodovias_item', inp.value.toUpperCase()); });
+
+        const clrBtn = document.createElement('button');
+        clrBtn.className   = 'ac-clear';
+        clrBtn.textContent = '×';
+        clrBtn.setAttribute('aria-label', `Limpar rodovia ${i + 1}`);
+        clrBtn.addEventListener('click', () => AC.clearInput(rid));
+
+        inputRow.appendChild(inp);
+        inputRow.appendChild(clrBtn);
+
+        const dropEl = document.createElement('div');
+        dropEl.className = 'ac-drop';
+        dropEl.id        = 'acd-' + rid;
+
+        wrap.appendChild(inputRow);
+        wrap.appendChild(dropEl);
+
+        const rmBtn = this._createRemoveButton(`Remover rodovia ${i + 1} (${tipo})`, () => this.removeRodovia(tipo, i));
+
+        row.appendChild(num);
+        row.appendChild(wrap);
+        row.appendChild(rmBtn);
+        cont.appendChild(row);
+      });
+    },
+
+    /* ── HELPERS PRIVADOS ─────────────────────────────────────── */
+
+    /** Retorna o array de paradas correto conforme o tipo ('ida' ou 'ret') */
+    _getParadasArray(tipo) {
+      return tipo === 'ida' ? S.paradasIda : S.paradasRet;
+    },
+
+    /** Retorna o array de rodovias correto conforme o tipo */
+    _getRodoviasArray(tipo) {
+      return tipo === 'ida' ? S.rodovias_ida : S.rodovias_ret;
+    },
+
+    /**
+     * Cria o círculo numerado que fica à esquerda de cada linha de lista.
+     * @param {number} num - número a exibir
+     */
+    _createNumBadge(num) {
+      const el = document.createElement('div');
+      el.className   = 'parada-num';
+      el.textContent = num;
+      el.setAttribute('aria-hidden', 'true');
+      return el;
+    },
+
+    /**
+     * Cria o botão "✕" de remoção de uma linha.
+     * @param {string}   ariaLabel - descrição acessível
+     * @param {Function} onClick   - callback ao clicar
+     */
+    _createRemoveButton(ariaLabel, onClick) {
+      const btn = document.createElement('button');
+      btn.className   = 'btn-remove';
+      btn.textContent = '✕';
+      btn.setAttribute('aria-label', ariaLabel);
+      btn.addEventListener('click', onClick);
+      return btn;
+    },
+
+    /**
+     * Cria um bloco completo de autocomplete (ac-wrap) com input, botão limpar e dropdown.
+     * @param {string}   inputId    - id do input
+     * @param {string}   value      - valor inicial
+     * @param {string}   placeholder
+     * @param {string}   collection - coleção do banco para sugestões
+     * @param {Function} onUpdate   - callback(value) ao alterar o input
+     * @param {string}   ariaLabel  - descrição acessível do input
+     */
+    _createAcWrap(inputId, value, placeholder, collection, onUpdate, ariaLabel) {
+      const wrap = document.createElement('div');
+      wrap.className = 'ac-wrap';
+      wrap.id        = 'acw-' + inputId;
+
+      const row = document.createElement('div');
+      row.className = 'ac-input-row';
+
+      const inp = document.createElement('input');
+      inp.id          = inputId;
+      inp.type        = 'text';
+      inp.placeholder = placeholder;
+      inp.value       = value;
+      inp.setAttribute('autocomplete', 'off');
+      inp.setAttribute('aria-label',   ariaLabel || placeholder);
+      if (collection === 'postos') inp.style.textTransform = 'uppercase';
+
+      inp.addEventListener('input',   () => { onUpdate(inp.value); AC.open(inputId, collection); });
+      inp.addEventListener('focus',   () => AC.open(inputId, collection));
+      inp.addEventListener('keydown',  e => AC.key(e, inputId));
+      inp.addEventListener('blur',    () => { AC.blur(inputId); DB.add(collection, inp.value); });
+
+      const clrBtn = document.createElement('button');
+      clrBtn.className   = 'ac-clear';
+      clrBtn.textContent = '×';
+      clrBtn.setAttribute('aria-label', `Limpar ${placeholder}`);
+      clrBtn.addEventListener('click', () => {
+        inp.value = '';
+        onUpdate('');
+        AC.closeAll();
+        inp.focus();
+      });
+
+      row.appendChild(inp);
+      row.appendChild(clrBtn);
+
+      const dropEl = document.createElement('div');
+      dropEl.className = 'ac-drop';
+      dropEl.id        = 'acd-' + inputId;
+
+      wrap.appendChild(row);
+      wrap.appendChild(dropEl);
+      return wrap;
+    },
+  };
+
+
+  /* ================================================================
+     11. MAPA — UPLOAD E DRAG-AND-DROP
+     Gerencia o carregamento das imagens dos mapas (ida e retorno).
+  ================================================================ */
+
+  /** Lê o arquivo selecionado via input e exibe a prévia */
+  function loadMap(evt, tipo) {
+    const file = evt.target.files[0];
+    if (file) readMapFile(file, tipo);
+  }
+
+  /** Processa um arquivo de imagem e armazena em S */
+  function readMapFile(file, tipo) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const data = e.target.result;
+      if (tipo === 'ida') S.mapaIda = data;
+      else                S.mapaRet = data;
+
+      document.getElementById(`img-${tipo}`).src = data;
+      document.getElementById(`preview-${tipo}`).style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /** Remove a imagem do mapa do estado e oculta a prévia */
+  function clearMap(tipo) {
+    if (tipo === 'ida') S.mapaIda = null;
+    else                S.mapaRet = null;
+
+    document.getElementById(`img-${tipo}`).src = '';
+    document.getElementById(`preview-${tipo}`).style.display = 'none';
+  }
+
+  /** Ativa o estado visual da zona de drop */
+  function dragOver(e, zoneId) {
+    e.preventDefault();
+    document.getElementById(zoneId).classList.add('drag');
+  }
+
+  /** Remove o estado visual da zona de drop */
+  function dragLeave(zoneId) {
+    document.getElementById(zoneId).classList.remove('drag');
+  }
+
+  /** Processa o arquivo arrastado e solto na zona de upload */
+  function dropFile(e, tipo) {
+    e.preventDefault();
+    dragLeave(tipo === 'ida' ? 'drop-ida' : 'drop-ret');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) readMapFile(file, tipo);
+  }
+
+
+  /* ================================================================
+     12. TABS — TROCA DE ABAS
+  ================================================================ */
+
+  /**
+   * Ativa a aba informada e desativa as demais.
+   * @param {string}      tab - id da aba ('ida' | 'retorno' | 'cadastro' | 'preview')
+   * @param {HTMLElement} btn - botão que foi clicado
+   */
+  function switchTab(tab, btn) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    if (btn) btn.classList.add('active');
+    AC.closeAll();
+
+    // Ações específicas ao abrir certas abas
+    if (tab === 'preview')  buildResumo();
+    if (tab === 'cadastro') Cad.renderAll();
+  }
+
+
+  /* ================================================================
+     13. COLETA — COLETA DOS DADOS PARA O PDF
+     Lê exclusivamente de S (nunca do DOM).
+  ================================================================ */
+
+  /**
+   * Formata uma data no formato ISO (YYYY-MM-DD) para DD/MM/YYYY.
+   * @param {string} isoDate
+   * @returns {string}
+   */
+  function formatDate(isoDate) {
+    if (!isoDate) return '—';
+    const [y, m, d] = isoDate.split('-');
+    return `${d}/${m}/${y}`;
+  }
+
+  /**
+   * Coleta e normaliza todos os dados do estado S para uso no PDF.
+   * @returns {object} dados prontos para as funções de build do PDF
+   */
+  function collectAll() {
+    const rodovias_ida = S.rodovias_ida.map(r => r.codigo).filter(Boolean).join(' – ') || '—';
+    const rodovias_ret = S.rodovias_ret.map(r => r.codigo).filter(Boolean).join(' – ') || '—';
+
+    return {
+      motorista   : S.motorista.toUpperCase()       || '—',
+      placa       : S.placa.toUpperCase()            || '—',
+      data        : formatDate(S.data),
+      base        : S.base.toUpperCase()             || '—',
+      rodovias_ida,
+      rodovias_ret,
+      contato     : S.contato                        || '—',
+      entregas    : S.entregas,
+      paradasIda  : S.paradasIda,
+      paradasRet  : S.paradasRet,
+      mapaIda     : S.mapaIda,
+      mapaRet     : S.mapaRet,
+    };
+  }
+
+
+  /* ================================================================
+     14. VALIDAÇÃO — CAMPOS OBRIGATÓRIOS
+     Bloqueia a geração do PDF se os campos essenciais estiverem vazios.
+  ================================================================ */
+
+  /**
+   * Valida os campos obrigatórios do formulário.
+   * Exibe mensagens de erro inline nos campos inválidos.
+   * @returns {boolean} true se o formulário estiver válido
+   */
+  function validateForm() {
+    let isValid = true;
+
+    // Regras de validação: campo em S, id do erro e id do wrapper do campo
+    const rules = [
+      { test: () => S.motorista.trim().length > 0, errId: 'err-motorista', fieldId: 'field-motorista' },
+      { test: () => S.placa.trim().length > 0,     errId: 'err-placa',     fieldId: 'field-placa'     },
+      { test: () => S.data.length > 0,             errId: 'err-data',      fieldId: 'field-data'      },
+    ];
+
+    rules.forEach(({ test, errId, fieldId }) => {
+      const errEl   = document.getElementById(errId);
+      const fieldEl = document.getElementById(fieldId);
+
+      if (!test()) {
+        isValid = false;
+        if (errEl)   errEl.style.display = 'block';
+        if (fieldEl) fieldEl.classList.add('field-error');
+      } else {
+        if (errEl)   errEl.style.display = 'none';
+        if (fieldEl) fieldEl.classList.remove('field-error');
+      }
+    });
+
+    // Pelo menos uma entrega com nome preenchido
+    const hasEntrega = S.entregas.some(e => e.nome && e.nome.trim().length > 0);
+    const errEntEl   = document.getElementById('err-entregas');
+    if (!hasEntrega) {
+      isValid = false;
+      if (errEntEl) errEntEl.style.display = 'block';
+    } else {
+      if (errEntEl) errEntEl.style.display = 'none';
+    }
+
+    return isValid;
+  }
+
+  // Remove o estado de erro ao começar a digitar nos campos obrigatórios
+  ['motorista', 'placa', 'data_carga'].forEach(id => {
+    const fieldMap = { motorista: 'field-motorista', placa: 'field-placa', data_carga: 'field-data' };
+    const errMap   = { motorista: 'err-motorista',   placa: 'err-placa',   data_carga: 'err-data'   };
+
+    document.getElementById(id)?.addEventListener('input', () => {
+      document.getElementById(fieldMap[id])?.classList.remove('field-error');
+      const errEl = document.getElementById(errMap[id]);
+      if (errEl) errEl.style.display = 'none';
+    });
+  });
+
+
+  /* ================================================================
+     15. RESUMO — PAINEL DE PRÉ-VISUALIZAÇÃO TEXTUAL
+  ================================================================ */
+
+  /** Constrói o HTML do resumo dos dados na aba PDF */
+  function buildResumo() {
+    const d    = collectAll();
+    const ords = ['1º', '2º', '3º', '4º', '5º', '6º', '7º', '8º'];
+
+    const entregasHtml = d.entregas.length
+      ? d.entregas.map((e, i) => `${ords[i] || ''} ${escHtml(e.nome || '—')} — ${escHtml(e.cidade || '—')}`).join('<br>')
+      : '—';
+
+    const paradasIdaHtml = d.paradasIda.length
+      ? d.paradasIda.map((p, i) => `Parada ${String(i + 1).padStart(2, '0')}: ${escHtml(p.posto || '—')} — ${escHtml(p.cidade || '—')}`).join('<br>')
+      : '—';
+
+    const paradasRetHtml = d.paradasRet.length
+      ? d.paradasRet.map((p, i) => `Parada ${String(i + 1).padStart(2, '0')}: ${escHtml(p.posto || '—')} — ${escHtml(p.cidade || '—')}`).join('<br>')
+      : '—';
+
+    document.getElementById('resumo').innerHTML = `
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px">
+        <div><b style="color: var(--text)">Motorista:</b> ${escHtml(d.motorista)}</div>
+        <div><b style="color: var(--text)">Placa:</b> ${escHtml(d.placa)}</div>
+        <div><b style="color: var(--text)">Data:</b> ${escHtml(d.data)}</div>
+        <div><b style="color: var(--text)">Base:</b> ${escHtml(d.base)}</div>
+        <div style="grid-column: span 2"><b style="color: var(--text)">Rodovias Ida:</b> ${escHtml(d.rodovias_ida)}</div>
+        <div style="grid-column: span 2"><b style="color: var(--text)">Rodovias Ret:</b> ${escHtml(d.rodovias_ret)}</div>
+      </div>
+      <hr style="border-color: var(--border); margin: 12px 0">
+      <b style="color: var(--accent)">Entregas:</b><br>${entregasHtml}
+      <hr style="border-color: var(--border); margin: 12px 0">
+      <b style="color: var(--accent)">Paradas Ida:</b><br>${paradasIdaHtml}
+      <hr style="border-color: var(--border); margin: 12px 0">
+      <b style="color: var(--accent)">Paradas Retorno:</b><br>${paradasRetHtml}
+      <hr style="border-color: var(--border); margin: 12px 0">
+      Mapas: Ida ${d.mapaIda ? '✅' : '❌'} · Retorno ${d.mapaRet ? '✅' : '❌'} | Contato: ${escHtml(d.contato)}
+    `;
+  }
+
+
+  /* ================================================================
+     16. RESET — LIMPAR FORMULÁRIO
+  ================================================================ */
+
+  /**
+   * Reseta todo o estado do formulário e preenche as linhas padrão
+   * conforme FORM_DEFAULTS. Não usa números fixos no código.
+   */
+  function resetForm() {
+    if (!confirm('Limpar dados e começar um novo rotograma?')) return;
+
+    // Reseta campos simples no estado
+    Object.assign(S, {
+      motorista  : '',
+      placa      : '',
+      data       : '',
+      base       : '',
+      contato    : '',
+      entregas   : [],
+      paradasIda : [],
+      paradasRet : [],
+      rodovias_ida: [],
+      rodovias_ret: [],
+      mapaIda    : null,
+      mapaRet    : null,
+    });
+
+    // Reseta campos simples no DOM
+    ['motorista', 'placa', 'base', 'contato'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+
+    const dateInput = document.getElementById('data_carga');
+    if (dateInput) {
+      const hoje = new Date().toISOString().split('T')[0];
+      dateInput.value = hoje;
+      S.data = hoje;
+    }
+
+    clearMap('ida');
+    clearMap('ret');
+
+    // Preenche linhas padrão a partir da configuração centralizada
+    for (let i = 0; i < FORM_DEFAULTS.entregas;   i++) Form.addEntrega();
+    for (let i = 0; i < FORM_DEFAULTS.paradasIda; i++) Form.addParada('ida');
+    for (let i = 0; i < FORM_DEFAULTS.paradasRet; i++) Form.addParada('ret');
+    for (let i = 0; i < FORM_DEFAULTS.rodovias;   i++) { Form.addRodovia('ida'); Form.addRodovia('ret'); }
+
+    setStatus('Formulário resetado com sucesso.', 'ok');
+  }
+
+
+  /* ================================================================
+     17. STATUS — BARRA DE FEEDBACK
+  ================================================================ */
+
+  /**
+   * Exibe uma mensagem na barra de status e a oculta após 5 segundos.
+   * @param {string} msg   - mensagem a exibir
+   * @param {string} type  - '' | 'ok' | 'err'
+   */
+  function setStatus(msg, type = '') {
+    const el = document.getElementById('status-bar');
+    el.textContent = msg;
+    el.className   = `status-bar show ${type}`;
+    setTimeout(() => el.classList.remove('show'), 5000);
+  }
+
+
+  /* ================================================================
+     18. PDF — CONSTRUÇÃO DAS PÁGINAS
+     Paleta de cores, helpers de renderização e funções que
+     montam as duas páginas (Ida e Retorno) do rotograma.
+  ================================================================ */
+
+  /**
+   * Paleta de cores usada no PDF.
+   * Todas as cores são arrays RGB [r, g, b].
+   */
+  const PDF_COLORS = {
+    azul  : [26,  86,  196],   // azul primário (cabeçalhos, entregas)
+    azulL : [240, 244, 255],   // azul claro (fundo de blocos)
+    azulB : [192, 210, 240],   // azul borda
+    verde : [32,  160, 100],   // verde (paradas autorizadas)
+    verdeL: [244, 251, 246],
+    verdeB: [192, 232, 210],
+    ambar : [200, 140, 20],    // âmbar (rodovias)
+    ambarL: [255, 248, 224],
+    ambarB: [240, 210, 100],
+    cinzaL: [248, 249, 250],   // cinza claro (fundo alternado)
+    cinzaB: [218, 222, 232],
+    txt   : [20,  30,  60],    // texto escuro
+    txtM  : [90,  100, 140],   // texto médio (rótulos)
+    txtC  : [160, 170, 200],   // texto claro (rodapé)
+    branco: [255, 255, 255],
+  };
+
+  /** Incrementa e retorna o próximo ID sequencial de rotograma */
+  function nextRotogramaId() {
+    const next = (parseInt(localStorage.getItem(SEQ_KEY) || '0') + 1);
+    localStorage.setItem(SEQ_KEY, next);
+    return String(next).padStart(4, '0');
+  }
+
+  /* ── Helpers de estilo para o jsPDF ── */
+
+  /** Define a cor de preenchimento */
+  const pdfFill = (doc, color) => doc.setFillColor(...color);
+
+  /** Define a cor e espessura da linha */
+  const pdfDraw = (doc, color, width = 0.3) => { doc.setDrawColor(...color); doc.setLineWidth(width); };
+
+  /** Define fonte, tamanho e cor do texto */
+  const pdfText = (doc, color, size, style = 'normal') => {
+    doc.setFont('helvetica', style);
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+  };
+
+  /* ── Componentes reutilizáveis do PDF ── */
+
+  /**
+   * Renderiza o cabeçalho de uma página (fundo branco, logo à esq., título à dir., linha azul embaixo).
+   * @param {object} doc       - instância do jsPDF
+   * @param {string} titulo    - título principal (ex: "ROTOGRAMA DE VIAGEM — IDA")
+   * @param {string} subtitulo - linha de informações rápidas
+   * @param {number} W         - largura da página em mm
+   * @param {string|null} logoData   - imagem do logo em base64 (ou null)
+   * @param {object|null} logoDims   - { w, h } do logo calculados
+   * @param {string} pageAlias - alias único para cache do jsPDF
+   */
+  function pdfHdr(doc, titulo, subtitulo, W, logoData, logoDims, pageAlias) {
+    const HDR_HEIGHT = 20;
+
+    if (logoData && logoDims) {
+      const ly = (HDR_HEIGHT - logoDims.h) / 2;
+      try       { doc.addImage(logoData, 'PNG',  10, ly, logoDims.w, logoDims.h, pageAlias, 'FAST'); }
+      catch (e) { doc.addImage(logoData, 'JPEG', 10, ly, logoDims.w, logoDims.h, pageAlias, 'FAST'); }
+    } else {
+      pdfText(doc, PDF_COLORS.azul, 15, 'bold');  doc.text('HORA', 10, 13);
+      pdfText(doc, PDF_COLORS.txtM, 6, 'normal'); doc.text('TRANSPORTES', 10, 17);
+    }
+
+    pdfText(doc, PDF_COLORS.txt, 11, 'bold');  doc.text(titulo,    W - 10, 10,   { align: 'right' });
+    pdfText(doc, PDF_COLORS.txtM, 7, 'normal'); doc.text(subtitulo, W - 10, 15.5, { align: 'right' });
+
+    // Linha separadora azul abaixo do cabeçalho
+    pdfFill(doc, PDF_COLORS.azul);
+    doc.rect(0, HDR_HEIGHT, W, 0.8, 'F');
+  }
+
+  /**
+   * Renderiza o bloco de dados do motorista (4 colunas numa única linha).
+   * @returns {number} Y após o bloco
+   */
+  function pdfDadosBloco(doc, d, W, ml, pw, y) {
+    const HEIGHT = 16;
+    pdfFill(doc, PDF_COLORS.azulL); pdfDraw(doc, PDF_COLORS.azulB, 0.2);
+    doc.roundedRect(ml, y, pw, HEIGHT, 2, 2, 'FD');
+
+    // Posições X de cada coluna
+    const colX = [ml + 4, ml + pw * 0.3, ml + pw * 0.55, ml + pw * 0.75];
+
+    pdfText(doc, PDF_COLORS.txtC, 5.5, 'bold');
+    doc.text('MOTORISTA', colX[0], y + 4.5);
+    doc.text('PLACA',     colX[1], y + 4.5);
+    doc.text('DATA',      colX[2], y + 4.5);
+    doc.text('BASE',      colX[3], y + 4.5);
+
+    // Separadores verticais entre colunas
+    pdfDraw(doc, PDF_COLORS.azulB, 0.15);
+    [colX[1], colX[2], colX[3]].forEach(x => doc.line(x - 3, y + 2, x - 3, y + HEIGHT - 2));
+
+    pdfText(doc, PDF_COLORS.txt, 7.5, 'bold');  doc.text(d.motorista, colX[0], y + 11);
+    pdfText(doc, PDF_COLORS.azul, 8, 'bold');   doc.text(d.placa,     colX[1], y + 11);
+    pdfText(doc, PDF_COLORS.txt, 7, 'normal');  doc.text(d.data,      colX[2], y + 11);
+    pdfText(doc, PDF_COLORS.txt, 6.5, 'normal'); doc.text(d.base,     colX[3], y + 11, { maxWidth: pw * 0.23 });
+
+    return y + HEIGHT + 3;
+  }
+
+  /**
+   * Renderiza o bloco de rota (rodovias) com barra âmbar à esquerda.
+   * @returns {number} Y após o bloco
+   */
+  function pdfRota(doc, texto, label, ml, pw, y) {
+    const HEIGHT = 10;
+    pdfFill(doc, PDF_COLORS.ambarL); pdfDraw(doc, PDF_COLORS.ambarB, 0.2);
+    doc.roundedRect(ml, y, pw, HEIGHT, 2, 2, 'FD');
+    pdfFill(doc, PDF_COLORS.ambar); doc.rect(ml, y, 2.5, HEIGHT, 'F');
+    pdfText(doc, PDF_COLORS.ambar, 5.5, 'bold');  doc.text(label, ml + 5, y + 4);
+    pdfText(doc, PDF_COLORS.txt, 7.5, 'bold');    doc.text(texto, ml + 5, y + 8.5, { maxWidth: pw - 8 });
+    return y + HEIGHT + 3;
+  }
+
+  /**
+   * Renderiza um cabeçalho de seção colorido (fundo sólido, texto branco).
+   * @param {number[]} cor - cor RGB do fundo
+   * @returns {number} Y após o cabeçalho
+   */
+  function pdfSecHeader(doc, titulo, cor, ml, pw, y) {
+    pdfFill(doc, cor); doc.roundedRect(ml, y, pw, 6, 1, 1, 'F');
+    pdfText(doc, PDF_COLORS.branco, 7, 'bold'); doc.text(titulo, ml + 4, y + 4.4);
+    return y + 6 + 2;
+  }
+
+  /**
+   * Renderiza uma linha de entrega (fundo alternado azul/branco).
+   * Nome e cidade ficam em colunas independentes (sem depender do tamanho do texto).
+   * @returns {number} Y após a linha
+   */
+  function pdfEntrega(doc, entrega, index, ml, pw, y) {
+    const HEIGHT = 10;
+    const bg     = index % 2 === 0 ? PDF_COLORS.cinzaL : PDF_COLORS.branco;
+    const midY   = y + HEIGHT / 2;
+
+    pdfFill(doc, bg); pdfDraw(doc, PDF_COLORS.cinzaB, 0.15);
+    doc.roundedRect(ml, y, pw, HEIGHT, 1.5, 1.5, 'FD');
+
+    // Barra e círculo azul com número
+    pdfFill(doc, PDF_COLORS.azul); doc.rect(ml, y, 2, HEIGHT, 'F');
+    pdfFill(doc, PDF_COLORS.azul); doc.circle(ml + 6.5, midY, 3, 'F');
+    pdfText(doc, PDF_COLORS.branco, 6, 'bold');
+    doc.text(String(index + 1), ml + 6.5, midY + 1.8, { align: 'center' });
+
+    // Nome — coluna fixa (55% da largura)
+    pdfText(doc, PDF_COLORS.txt, 7.5, 'bold');
+    doc.text((entrega.nome || '—').toUpperCase(), ml + 12, midY + 1.8, { maxWidth: pw * 0.55 });
+
+    // Cidade — sempre alinhada à direita, coluna independente
+    pdfText(doc, PDF_COLORS.txtM, 6.5, 'normal');
+    doc.text((entrega.cidade || '—').toUpperCase(), ml + pw - 3, midY + 1.8, { align: 'right', maxWidth: pw * 0.38 });
+
+    return y + HEIGHT + 1.5;
+  }
+
+  /**
+   * Renderiza uma linha de parada autorizada (fundo verde).
+   * @returns {number} Y após a linha
+   */
+  function pdfParada(doc, parada, index, ml, pw, y) {
+    const HEIGHT = 9.5;
+    const midY   = y + HEIGHT / 2;
+
+    pdfFill(doc, PDF_COLORS.verdeL); pdfDraw(doc, PDF_COLORS.verdeB, 0.15);
+    doc.roundedRect(ml, y, pw, HEIGHT, 1.5, 1.5, 'FD');
+
+    pdfFill(doc, PDF_COLORS.verde); doc.rect(ml, y, 2, HEIGHT, 'F');
+    pdfFill(doc, PDF_COLORS.verde); doc.circle(ml + 6, midY, 2.8, 'F');
+    pdfText(doc, PDF_COLORS.branco, 5.5, 'bold');
+    doc.text(String(index + 1), ml + 6, midY + 1.6, { align: 'center' });
+
+    pdfText(doc, PDF_COLORS.verde, 5.5, 'bold');
+    doc.text(`P${String(index + 1).padStart(2, '0')}`, ml + 11, y + 3.8);
+
+    pdfText(doc, PDF_COLORS.txt, 7, 'bold');
+    doc.text((parada.posto || '—').toUpperCase(), ml + 11, y + 8, { maxWidth: pw * 0.55 });
+
+    pdfText(doc, PDF_COLORS.txtM, 6.5, 'normal');
+    doc.text((parada.cidade || '—').toUpperCase(), ml + pw - 3, midY + 1.6, { align: 'right', maxWidth: pw * 0.38 });
+
+    return y + HEIGHT + 1.2;
+  }
+
+  /**
+   * Renderiza a imagem do mapa ou um placeholder cinza se não houver imagem.
+   * @param {string} alias - alias único para o cache de imagens do jsPDF
+   * @returns {number} Y após o mapa
+   */
+  function pdfMapa(doc, imgData, ml, pw, y, maxH, alias) {
+    if (imgData) {
+      const ih = Math.min(maxH, 80);
+      if (ih > 15) {
+        try       { doc.addImage(imgData, 'JPEG', ml, y, pw, ih, alias, 'FAST'); }
+        catch (e) { doc.addImage(imgData, 'PNG',  ml, y, pw, ih, alias, 'FAST'); }
+      }
+      return y + ih + 3;
+    }
+
+    // Placeholder quando sem imagem
+    pdfFill(doc, PDF_COLORS.cinzaL); pdfDraw(doc, PDF_COLORS.cinzaB);
+    doc.roundedRect(ml, y, pw, 30, 2, 2, 'FD');
+    pdfText(doc, PDF_COLORS.txtC, 7, 'normal');
+    doc.text('[ Mapa não carregado ]', ml + pw / 2, y + 16, { align: 'center' });
+    return y + 33;
+  }
+
+  /**
+   * Renderiza o rodapé padrão com número do rotograma, data de emissão e paginação.
+   */
+  function pdfRodape(doc, W, H, pagina, rotoId) {
+    pdfDraw(doc, PDF_COLORS.azulB, 0.3);
+    doc.line(0, H - 8, W, H - 8);
+    pdfText(doc, PDF_COLORS.txtC, 6, 'normal');
+    doc.text(`Nº ${rotoId}`,                                          10,      H - 3.5);
+    doc.text(`Emitido em ${new Date().toLocaleDateString('pt-BR')}`,  W / 2,   H - 3.5, { align: 'center' });
+    doc.text(`Pág. ${pagina} / 2`,                                    W - 10,  H - 3.5, { align: 'right' });
+  }
+
+  /**
+   * Constrói a Página 1 — Rotograma Ida.
+   */
+  function buildPageIda(doc, d, logoData, logoDims, rotoId) {
+    const W  = 210;    // largura A4 em mm
+    const H  = 297;    // altura A4 em mm
+    const ml = 12;     // margem lateral
+    const pw = W - 24; // largura útil
+
+    pdfHdr(doc, 'ROTOGRAMA DE VIAGEM — IDA', `Nº ${rotoId}  ·  ${d.data}  ·  ${d.base}`, W, logoData, logoDims, 'logo_p1');
+
+    let y = 24;
+    y = pdfDadosBloco(doc, d, W, ml, pw, y);
+    y = pdfRota(doc, d.rodovias_ida, 'ROTA DE IDA', ml, pw, y);
+    y = pdfSecHeader(doc, 'ENTREGAS', PDF_COLORS.azul, ml, pw, y);
+    d.entregas.forEach((e, i) => { y = pdfEntrega(doc, e, i, ml, pw, y); });
+
+    y += 2;
+    y = pdfSecHeader(doc, 'PARADAS AUTORIZADAS', PDF_COLORS.verde, ml, pw, y);
+    d.paradasIda.forEach((p, i) => { y = pdfParada(doc, p, i, ml, pw, y); });
+
+    y += 3;
+    pdfMapa(doc, d.mapaIda, ml, pw, y, H - y - 12, 'mapa_p1');
+    pdfRodape(doc, W, H, 1, rotoId);
+  }
+
+  /**
+   * Constrói a Página 2 — Rotograma Retorno.
+   */
+  function buildPageRet(doc, d, logoData, logoDims, rotoId) {
+    const W  = 210;
+    const H  = 297;
+    const ml = 12;
+    const pw = W - 24;
+
+    pdfHdr(doc, 'ROTOGRAMA DE VIAGEM — RETORNO', `Nº ${rotoId}  ·  ${d.data}  ·  ${d.motorista}`, W, logoData, logoDims, 'logo_p2');
+
+    let y = 24;
+
+    // Bloco compacto de identificação (sem o campo Base)
+    pdfFill(doc, PDF_COLORS.azulL); pdfDraw(doc, PDF_COLORS.azulB, 0.2);
+    doc.roundedRect(ml, y, pw, 10, 2, 2, 'FD');
+    pdfText(doc, PDF_COLORS.txtM, 5.5, 'bold'); doc.text('MOTORISTA:', ml + 4,      y + 4.5);
+    pdfText(doc, PDF_COLORS.txt,  7,   'bold'); doc.text(d.motorista,   ml + 24,     y + 4.5);
+    pdfText(doc, PDF_COLORS.txtM, 5.5, 'bold'); doc.text('PLACA:',      W / 2 + 4,  y + 4.5);
+    pdfText(doc, PDF_COLORS.azul, 8,   'bold'); doc.text(d.placa,       W / 2 + 16, y + 4.5);
+    y += 13;
+
+    y = pdfRota(doc, d.rodovias_ret, 'ROTA DE RETORNO', ml, pw, y);
+    y = pdfSecHeader(doc, 'PARADAS AUTORIZADAS', PDF_COLORS.verde, ml, pw, y);
+    d.paradasRet.forEach((p, i) => { y = pdfParada(doc, p, i, ml, pw, y); });
+
+    y += 3;
+
+    // Reserva espaço para o bloco de contato antes do mapa
+    const hasContato = d.contato && d.contato !== '—';
+    const mapaMaxH   = hasContato ? H - y - 22 : H - y - 12;
+    y = pdfMapa(doc, d.mapaRet, ml, pw, y, mapaMaxH, 'mapa_p2');
+
+    // Bloco de contato (impresso somente se preenchido)
+    if (hasContato) {
+      pdfFill(doc, PDF_COLORS.azulL); pdfDraw(doc, PDF_COLORS.azulB, 0.2);
+      doc.roundedRect(ml, y, pw, 12, 2, 2, 'FD');
+      pdfText(doc, PDF_COLORS.txtM, 6, 'bold');  doc.text('EM CASO DE DÚVIDAS LIGAR:', W / 2, y + 4.5, { align: 'center' });
+      pdfText(doc, PDF_COLORS.azul, 10, 'bold'); doc.text(d.contato,                   W / 2, y + 10,  { align: 'center' });
+    }
+
+    pdfRodape(doc, W, H, 2, rotoId);
+  }
+
+  /**
+   * Ponto de entrada da geração do PDF:
+   * valida o formulário, coleta os dados, salva no banco e dispara o download.
+   */
+  async function gerarPDF() {
+    // Bloqueia a geração se campos obrigatórios estiverem vazios
+    if (!validateForm()) {
+      setStatus('⚠ Preencha os campos obrigatórios antes de gerar o PDF.', 'err');
+      switchTab('ida', document.querySelector('.tab'));
+      return;
+    }
+
+    const { jsPDF } = window.jspdf;
+    if (!jsPDF) { setStatus('Biblioteca jsPDF não carregada.', 'err'); return; }
+
+    const d      = collectAll();
+    const rotoId = nextRotogramaId();
+
+    // Persiste todos os dados no banco local
+    DB.add('motoristas', d.motorista);
+    DB.add('placas',     d.placa);
+    DB.add('bases',      d.base);
+    DB.add('rodovias',   d.rodovias_ida);
+    DB.add('rodovias',   d.rodovias_ret);
+    DB.add('contatos',   d.contato);
+    DB.linkMotoristaPlaca(d.motorista, d.placa);
+    d.entregas.forEach(e  => { DB.add('postos',  e.nome);   DB.add('cidades', e.cidade);  });
+    d.paradasIda.forEach(p => { DB.add('postos',  p.posto);  DB.add('cidades', p.cidade); });
+    d.paradasRet.forEach(p => { DB.add('postos',  p.posto);  DB.add('cidades', p.cidade); });
+
+    // Calcula as dimensões do logo para o PDF (assíncrono)
+    const logoData = Logo.get();
+    const logoDims = await new Promise(resolve => {
+      if (!logoData) { resolve(null); return; }
+      Logo.dims(logoData, 44, 16, (w, h) => resolve({ w, h }));
+    });
+
+    // Monta o documento PDF
+    const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+    buildPageIda(doc, d, logoData, logoDims, rotoId);
+    doc.addPage();
+    buildPageRet(doc, d, logoData, logoDims, rotoId);
+
+    // Dispara o download com nome padronizado
+    const fileName = `ROTOGRAMA_${rotoId}_${d.motorista.replace(/\s+/g, '_')}_${S.data.replace(/-/g, '')}.pdf`;
+    doc.save(fileName);
+
+    setStatus(`✓ PDF Nº ${rotoId} gerado com sucesso!`, 'ok');
+    Cad.renderAll();
+  }
+
+
+  /* ================================================================
+     19. UTILS — FUNÇÕES AUXILIARES
+  ================================================================ */
+
+  /**
+   * Escapa caracteres especiais HTML para prevenir XSS.
+   * Usado ao inserir valores do usuário em innerHTML.
+   * @param {*} s - valor a escapar
+   * @returns {string}
+   */
+  function escHtml(s) {
+    return String(s || '')
+      .replace(/&/g,  '&amp;')
+      .replace(/</g,  '&lt;')
+      .replace(/>/g,  '&gt;')
+      .replace(/"/g,  '&quot;');
+  }
+
+  /**
+   * Escapa caracteres especiais para uso seguro em atributos HTML.
+   * @param {*} s
+   * @returns {string}
+   */
+  function escAttr(s) {
+    return String(s || '')
+      .replace(/'/g, '&#39;')
+      .replace(/"/g, '&quot;');
+  }
+
+
+  /* ================================================================
+     20. INIT — PONTO DE ENTRADA DA APLICAÇÃO
+     Executado quando o DOM está pronto.
+  ================================================================ */
+  window.addEventListener('load', () => {
+    // Normaliza e remove duplicatas de dados legados no banco
+    DB.migrate();
+
+    // Preenche a data de hoje no campo e no estado
+    const hoje = new Date().toISOString().split('T')[0];
+    document.getElementById('data_carga').value = hoje;
+    S.data = hoje;
+
+    // Preenche o ano no rodapé dinamicamente
+    const yearEl = document.getElementById('footer-year');
+    if (yearEl) yearEl.textContent = new Date().getFullYear();
+
+    // Inicializa as linhas padrão a partir da configuração centralizada
+    for (let i = 0; i < FORM_DEFAULTS.entregas;   i++) Form.addEntrega();
+    for (let i = 0; i < FORM_DEFAULTS.paradasIda; i++) Form.addParada('ida');
+    for (let i = 0; i < FORM_DEFAULTS.paradasRet; i++) Form.addParada('ret');
+    for (let i = 0; i < FORM_DEFAULTS.rodovias;   i++) { Form.addRodovia('ida'); Form.addRodovia('ret'); }
+
+    // Atualiza o badge de registros e restaura o logo salvo
+    DB.updateBadge();
+    Logo.init();
+  });
+  </script>
+</body>
+</html>
