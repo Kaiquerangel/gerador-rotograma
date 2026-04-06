@@ -17,18 +17,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gerador de Rotograma — HORA DISTRIBUIDORA DE PETROLEO LTDA</title>
 
-  <!-- Biblioteca para geração de PDF no lado do cliente -->
+  <!-- Biblioteca para geração de PDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-  <!-- Fontes: Barlow Condensed para títulos, Barlow para corpo -->
+ 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500;600&display=swap">
 
   <style>
-    /* ================================================================
-       DESIGN TOKENS — variáveis CSS globais
-       Altere aqui para mudar o tema inteiro da aplicação.
-    ================================================================ */
     :root {
       --bg        : #0f1117;
       --surface   : #181c27;
@@ -79,7 +75,7 @@
       z-index       : 200;
     }
 
-    /* Logo clicável para upload de imagem personalizada */
+    /* Logo clicável para upload de imagem */
     .logo-box {
       display     : flex;
       align-items : center;
@@ -195,7 +191,7 @@
       50%       { opacity: .3; }
     }
 
-    /* Link para o GitHub do desenvolvedor */
+    /* Link para o GitHub */
     .github-btn {
       display        : flex;
       align-items    : center;
@@ -365,7 +361,7 @@
 
     .ac-input-row input { flex: 1; }
 
-    /* Botão "×" para limpar o campo — aparece quando há conteúdo */
+    /* Botão "×" para limpar o campo */
     .ac-clear {
       position  : absolute;
       right     : 10px;
@@ -441,7 +437,7 @@
     .ac-list::-webkit-scrollbar       { width: 4px; }
     .ac-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
-    /* Rótulo de grupo (ex: "Usados recentemente") */
+    /* ex: "Usados recentemente" */
     .ac-group-label {
       padding       : 5px 14px 3px;
       font-size     : 9px;
@@ -481,12 +477,12 @@
       text-overflow: ellipsis;
     }
 
-    /* Trecho destacado pelo match fuzzy */
+    /* fuzzy */
     .ac-item-main mark { background: none; color: var(--accent); font-weight: 700; }
 
     .ac-item-sub  { font-size: 10px; color: var(--text2); margin-top: 1px; }
 
-    /* Badge de frequência de uso */
+    /* frequência de uso */
     .ac-item-freq {
       font-size    : 10px;
       color        : var(--text2);
@@ -627,7 +623,7 @@
     .btn-add:hover { border-color: var(--accent); color: var(--accent); }
 
     /* ================================================================
-       UPLOAD DE MAPAS — zona de drag-and-drop
+       UPLOAD DE MAPAS 
     ================================================================ */
     .upload-zone {
       border       : 2px dashed var(--border);
@@ -723,7 +719,7 @@
     .btn-sm        { padding: 6px 13px; font-size: 11px; }
 
     /* ================================================================
-       BARRA DE STATUS — feedback após ações (gerar PDF, importar, etc.)
+       BARRA DE STATUS — após ações (gerar PDF, importar)
     ================================================================ */
     .status-bar {
       background   : var(--surface2);
